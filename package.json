@@ -1,0 +1,12 @@
+{
+  "name": "suarausaha-final",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "dev:backend": "npm --prefix backend run dev",
+    "test:backend": "npm --prefix backend test"
+  }
+}
