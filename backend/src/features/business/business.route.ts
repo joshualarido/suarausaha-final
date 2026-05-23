@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
+import { env } from "../../config/env.js";
 import { requireAuth } from "../auth/auth.middleware.js";
 import {
   createBusinessForOwner,
   getBusinessOnboardingContextForOwner,
+  resetBusinessForOwner,
   type BusinessOnboardingContext,
   updateBusinessNameForOwner,
 } from "./business.service.js";
@@ -128,6 +130,28 @@ businessRouter.patch("/business", requireAuth, async (req, res) => {
       ...onboardingContext,
       business: updatedBusiness,
     }),
+  });
+});
+
+businessRouter.post("/debug/reset-onboarding", requireAuth, async (req, res) => {
+  if (env.NODE_ENV === "production") {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: "FORBIDDEN",
+        message: "Debug reset is not available in production.",
+      },
+    });
+    return;
+  }
+
+  const didReset = await resetBusinessForOwner(req.user!.id);
+
+  res.json({
+    success: true,
+    data: {
+      reset: didReset,
+    },
   });
 });
 

@@ -11,6 +11,16 @@ export interface BusinessRow {
   updatedAt: Date;
 }
 
+export interface UserRow {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  image: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface PaymentAccountRow {
   id: string;
   businessId: string;
@@ -44,6 +54,8 @@ export interface OpeningBalanceRow {
 export interface TransactionRow {
   id: string;
   businessId: string;
+  confirmationRequestId: string | null;
+  parsedCommandId: string | null;
   paymentAccountId: string | null;
   type: string;
   amount: string;
@@ -56,10 +68,76 @@ export interface TransactionRow {
   createdBy: string;
 }
 
+export interface ParsedCommandRow {
+  id: string;
+  businessId: string;
+  userId: string;
+  rawInputText: string;
+  normalizedInputText: string | null;
+  source: "text";
+  detectedIntent: string | null;
+  parserModel: string;
+  parserVersion: string;
+  confidence: string | null;
+  structuredPayload: unknown;
+  missingFields: unknown;
+  validationErrors: unknown;
+  status: "parsed" | "needs_clarification" | "failed";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ConfirmationRequestRow {
+  id: string;
+  businessId: string;
+  userId: string;
+  parsedCommandId: string | null;
+  type: "transaction";
+  status: "pending" | "confirmed" | "cancelled" | "expired" | "failed";
+  proposedActionJson: unknown;
+  summaryText: string;
+  warningText: string | null;
+  expectedEffectsJson: unknown;
+  expiresAt: Date;
+  confirmedAt: Date | null;
+  cancelledAt: Date | null;
+  resultingTransactionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ChatSessionRow {
+  id: string;
+  businessId: string;
+  userId: string;
+  status: "active" | "closed";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ChatMessageRow {
+  id: string;
+  sessionId: string;
+  businessId: string;
+  userId: string;
+  role: "user" | "assistant";
+  kind: "text" | "clarification" | "confirmation_card" | "system_result";
+  contentJson: unknown;
+  parsedCommandId: string | null;
+  confirmationRequestId: string | null;
+  transactionId: string | null;
+  createdAt: Date;
+}
+
 export interface DatabaseSchema {
+  user: UserRow;
   business: BusinessRow;
   payment_accounts: PaymentAccountRow;
   opening_balances: OpeningBalanceRow;
+  parsed_commands: ParsedCommandRow;
+  confirmation_requests: ConfirmationRequestRow;
+  chat_sessions: ChatSessionRow;
+  chat_messages: ChatMessageRow;
   transactions: TransactionRow;
 }
 
@@ -160,6 +238,11 @@ export async function ensureDatabaseSchema(): Promise<void> {
   `.execute(db);
 
   await sql`
+    ALTER TABLE "payment_accounts"
+    DROP CONSTRAINT IF EXISTS "payment_accounts_businessId_type_key";
+  `.execute(db);
+
+  await sql`
     CREATE TABLE IF NOT EXISTS "opening_balances" (
       "id" text PRIMARY KEY,
       "businessId" text NOT NULL UNIQUE REFERENCES "business"("id") ON DELETE CASCADE,
@@ -180,9 +263,80 @@ export async function ensureDatabaseSchema(): Promise<void> {
   `.execute(db);
 
   await sql`
+    CREATE TABLE IF NOT EXISTS "parsed_commands" (
+      "id" text PRIMARY KEY,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "userId" text NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT,
+      "rawInputText" text NOT NULL,
+      "normalizedInputText" text,
+      "source" text NOT NULL DEFAULT 'text' CHECK ("source" IN ('text')),
+      "detectedIntent" text,
+      "parserModel" text NOT NULL,
+      "parserVersion" text NOT NULL,
+      "confidence" numeric,
+      "structuredPayload" jsonb NOT NULL DEFAULT '{}'::jsonb,
+      "missingFields" jsonb NOT NULL DEFAULT '[]'::jsonb,
+      "validationErrors" jsonb NOT NULL DEFAULT '[]'::jsonb,
+      "status" text NOT NULL CHECK ("status" IN ('parsed', 'needs_clarification', 'failed')),
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "confirmation_requests" (
+      "id" text PRIMARY KEY,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "userId" text NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT,
+      "parsedCommandId" text REFERENCES "parsed_commands"("id") ON DELETE SET NULL,
+      "type" text NOT NULL DEFAULT 'transaction' CHECK ("type" IN ('transaction')),
+      "status" text NOT NULL CHECK ("status" IN ('pending', 'confirmed', 'cancelled', 'expired', 'failed')),
+      "proposedActionJson" jsonb NOT NULL,
+      "summaryText" text NOT NULL,
+      "warningText" text,
+      "expectedEffectsJson" jsonb NOT NULL DEFAULT '[]'::jsonb,
+      "expiresAt" timestamptz NOT NULL,
+      "confirmedAt" timestamptz,
+      "cancelledAt" timestamptz,
+      "resultingTransactionId" text,
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "chat_sessions" (
+      "id" text PRIMARY KEY,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "userId" text NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT,
+      "status" text NOT NULL DEFAULT 'active' CHECK ("status" IN ('active', 'closed')),
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "chat_messages" (
+      "id" text PRIMARY KEY,
+      "sessionId" text NOT NULL REFERENCES "chat_sessions"("id") ON DELETE CASCADE,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "userId" text NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT,
+      "role" text NOT NULL CHECK ("role" IN ('user', 'assistant')),
+      "kind" text NOT NULL CHECK ("kind" IN ('text', 'clarification', 'confirmation_card', 'system_result')),
+      "contentJson" jsonb NOT NULL,
+      "parsedCommandId" text REFERENCES "parsed_commands"("id") ON DELETE SET NULL,
+      "confirmationRequestId" text REFERENCES "confirmation_requests"("id") ON DELETE SET NULL,
+      "transactionId" text REFERENCES "transactions"("id") ON DELETE SET NULL,
+      "createdAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
     CREATE TABLE IF NOT EXISTS "transactions" (
       "id" text PRIMARY KEY,
       "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "confirmationRequestId" text REFERENCES "confirmation_requests"("id") ON DELETE SET NULL,
+      "parsedCommandId" text REFERENCES "parsed_commands"("id") ON DELETE SET NULL,
       "paymentAccountId" text REFERENCES "payment_accounts"("id") ON DELETE SET NULL,
       "type" text NOT NULL,
       "amount" bigint NOT NULL CHECK ("amount" > 0),
@@ -194,5 +348,15 @@ export async function ensureDatabaseSchema(): Promise<void> {
       "createdAt" timestamptz NOT NULL DEFAULT now(),
       "createdBy" text NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT
     );
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE "transactions"
+    ADD COLUMN IF NOT EXISTS "confirmationRequestId" text REFERENCES "confirmation_requests"("id") ON DELETE SET NULL;
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE "transactions"
+    ADD COLUMN IF NOT EXISTS "parsedCommandId" text REFERENCES "parsed_commands"("id") ON DELETE SET NULL;
   `.execute(db);
 }

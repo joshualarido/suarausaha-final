@@ -3,6 +3,8 @@ import express from "express";
 import { env } from "./config/env.js";
 import { authRouter } from "./features/auth/auth.route.js";
 import { businessRouter } from "./features/business/business.route.js";
+import { chatRouter } from "./features/chat/chat.route.js";
+import { confirmationRouter } from "./features/confirmations/confirmation.route.js";
 import { healthRouter } from "./features/health/health.route.js";
 import { openingBalanceRouter } from "./features/opening-balance/opening-balance.route.js";
 import { paymentAccountRouter } from "./features/payment-accounts/payment-account.route.js";
@@ -24,6 +26,8 @@ app.use("/api/v1", userRouter);
 app.use("/api/v1", businessRouter);
 app.use("/api/v1", openingBalanceRouter);
 app.use("/api/v1", paymentAccountRouter);
+app.use("/api/v1", chatRouter);
+app.use("/api/v1", confirmationRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (env.NODE_ENV !== "test") {

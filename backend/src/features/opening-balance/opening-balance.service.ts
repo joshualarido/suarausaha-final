@@ -89,7 +89,6 @@ export async function confirmOpeningBalance(
     await seedDefaultPaymentAccounts(tx, {
       businessId,
       cashBalance: toBigInt(input.cashBalance),
-      nonCashBalance: toBigInt(input.nonCashBalance),
     });
 
     const now = new Date();

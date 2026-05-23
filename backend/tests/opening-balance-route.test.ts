@@ -67,19 +67,18 @@ describe("opening balance routes", () => {
   it("returns opening balance preview", async () => {
     vi.mocked(previewOpeningBalance).mockReturnValue({
       cashBalance: 500_000,
-      nonCashBalance: 1_000_000,
+      nonCashBalance: 0,
       inventoryValue: 300_000,
       assetValue: 2_000_000,
       debtValue: 400_000,
       receivableValue: 150_000,
-      openingAssets: 3_950_000,
+      openingAssets: 2_950_000,
       openingLiabilities: 400_000,
-      openingEquity: 3_550_000,
+      openingEquity: 2_550_000,
     });
 
     const response = await request(app).post("/api/v1/opening-balance/preview").send({
       cashBalance: 500_000,
-      nonCashBalance: 1_000_000,
       inventoryValue: 300_000,
       assetValue: 2_000_000,
       debtValue: 400_000,
@@ -87,7 +86,17 @@ describe("opening balance routes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.data.openingEquity).toBe(3_550_000);
+    expect(previewOpeningBalance).toHaveBeenCalledWith({
+      cashBalance: 500_000,
+      nonCashBalance: 0,
+      inventoryValue: 300_000,
+      assetValue: 2_000_000,
+      debtValue: 400_000,
+      receivableValue: 150_000,
+    });
+    expect(confirmOpeningBalance).not.toHaveBeenCalled();
+    expect(findBusinessByOwnerId).not.toHaveBeenCalled();
+    expect(response.body.data.openingEquity).toBe(2_550_000);
   });
 
   it("confirms opening balance once", async () => {

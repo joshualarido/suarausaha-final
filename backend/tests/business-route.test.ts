@@ -16,6 +16,7 @@ vi.mock("../src/features/business/business.service.js", () => {
     findBusinessByOwnerId: vi.fn(),
     getBusinessOnboardingContextForOwner: vi.fn(),
     createBusinessForOwner: vi.fn(),
+    resetBusinessForOwner: vi.fn(),
     updateBusinessNameForOwner: vi.fn(),
   };
 });
@@ -25,6 +26,7 @@ import { auth } from "../src/features/auth/auth.js";
 import {
   createBusinessForOwner,
   getBusinessOnboardingContextForOwner,
+  resetBusinessForOwner,
   updateBusinessNameForOwner,
 } from "../src/features/business/business.service.js";
 
@@ -224,6 +226,21 @@ describe("business routes", () => {
       error: {
         code: "NOT_FOUND",
         message: "Business profile not found.",
+      },
+    });
+  });
+
+  it("resets onboarding state through debug endpoint in non-production mode", async () => {
+    vi.mocked(resetBusinessForOwner).mockResolvedValue(true as never);
+
+    const response = await request(app).post("/api/v1/debug/reset-onboarding").send({});
+
+    expect(response.status).toBe(200);
+    expect(resetBusinessForOwner).toHaveBeenCalledWith("user_123");
+    expect(response.body).toEqual({
+      success: true,
+      data: {
+        reset: true,
       },
     });
   });

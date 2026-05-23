@@ -12,7 +12,7 @@ import {
 
 const openingBalancePayloadSchema = z.object({
   cashBalance: z.number().int().min(0),
-  nonCashBalance: z.number().int().min(0),
+  nonCashBalance: z.number().int().min(0).default(0),
   inventoryValue: z.number().int().min(0),
   assetValue: z.number().int().min(0),
   debtValue: z.number().int().min(0),

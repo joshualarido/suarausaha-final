@@ -82,6 +82,23 @@ export async function updateBusinessNameForOwner(ownerId: string, name: string):
   return updated ?? null;
 }
 
+export async function resetBusinessForOwner(ownerId: string): Promise<boolean> {
+  return runFinancialWrite(async (tx) => {
+    const existingBusiness = await tx
+      .selectFrom("business")
+      .select("id")
+      .where("ownerId", "=", ownerId)
+      .executeTakeFirst();
+
+    if (!existingBusiness) {
+      return false;
+    }
+
+    await tx.deleteFrom("business").where("id", "=", existingBusiness.id).executeTakeFirst();
+    return true;
+  });
+}
+
 export async function getBusinessOnboardingContextForOwner(ownerId: string): Promise<BusinessOnboardingContext> {
   const business = await findBusinessByOwnerId(ownerId);
 

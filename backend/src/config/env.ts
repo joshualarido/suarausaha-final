@@ -7,8 +7,8 @@ const apiBaseUrl = process.env.API_BASE_URL ?? process.env.BETTER_AUTH_URL;
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  PORT: z.coerce.number().int().positive().default(3001),
-  API_BASE_URL: z.string().url().default("http://localhost:3001"),
+  PORT: z.coerce.number().int().positive().default(3000),
+  API_BASE_URL: z.string().url().default("http://localhost:3000"),
   FRONTEND_ORIGIN: z.string().url().default("http://localhost:5173"),
   BETTER_AUTH_SECRET: z.string().min(16).default("development-secret-not-for-prod"),
   GOOGLE_CLIENT_ID: z.string().min(1).default("dev-google-client-id"),
