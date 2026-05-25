@@ -16,6 +16,16 @@ import {
 import { proposedActionSchema, type ProposedAction } from "../parser/parser.types.js";
 
 const CONFIRMATION_TTL_MS = 15 * 60 * 1000;
+export type ConfirmationStateErrorCode =
+  | "CONFIRMATION_NOT_USABLE"
+  | "INSUFFICIENT_BALANCE"
+  | "PAYMENT_ACCOUNT_REQUIRED"
+  | "PAYMENT_ACCOUNT_INVALID"
+  | "TARGET_REQUIRED"
+  | "TARGET_NOT_FOUND"
+  | "TARGET_AMBIGUOUS"
+  | "PAYMENT_AMOUNT_INVALID"
+  | "REVERSAL_NOT_ALLOWED";
 
 export class ConfirmationNotFoundError extends Error {
   constructor() {
@@ -24,8 +34,11 @@ export class ConfirmationNotFoundError extends Error {
 }
 
 export class InvalidConfirmationStateError extends Error {
-  constructor(message = "Confirmation request cannot be used.") {
+  code: ConfirmationStateErrorCode;
+
+  constructor(message = "Confirmation request cannot be used.", code: ConfirmationStateErrorCode = "CONFIRMATION_NOT_USABLE") {
     super(message);
+    this.code = code;
   }
 }
 
@@ -122,6 +135,35 @@ function summaryFor(action: ProposedAction): string {
 
 function parseAction(value: unknown): ProposedAction {
   return proposedActionSchema.parse(value);
+}
+
+function toConfirmationStateError(error: unknown): InvalidConfirmationStateError | null {
+  if (error instanceof MissingPaymentAccountForTransactionError) {
+    return new InvalidConfirmationStateError(error.message, "PAYMENT_ACCOUNT_REQUIRED");
+  }
+  if (error instanceof InsufficientPaymentAccountBalanceError) {
+    return new InvalidConfirmationStateError(error.message, "INSUFFICIENT_BALANCE");
+  }
+  if (error instanceof InvalidPaymentAccountOwnershipError) {
+    return new InvalidConfirmationStateError(error.message, "PAYMENT_ACCOUNT_INVALID");
+  }
+  if (error instanceof MissingAffectedObjectError) {
+    return new InvalidConfirmationStateError(error.message, "TARGET_REQUIRED");
+  }
+  if (error instanceof FinancialTargetNotFoundError) {
+    return new InvalidConfirmationStateError(error.message, "TARGET_NOT_FOUND");
+  }
+  if (error instanceof AmbiguousFinancialTargetError) {
+    return new InvalidConfirmationStateError(error.message, "TARGET_AMBIGUOUS");
+  }
+  if (error instanceof FinancialTargetOverpaymentError) {
+    return new InvalidConfirmationStateError(error.message, "PAYMENT_AMOUNT_INVALID");
+  }
+  if (error instanceof UnsafeReversalError) {
+    return new InvalidConfirmationStateError(error.message, "REVERSAL_NOT_ALLOWED");
+  }
+
+  return null;
 }
 
 async function findConfirmationForUpdate(
@@ -310,17 +352,9 @@ export async function confirmConfirmationRequest(
         parsedCommandId: confirmation.parsedCommandId,
       });
     } catch (error) {
-      if (
-        error instanceof MissingPaymentAccountForTransactionError ||
-        error instanceof InsufficientPaymentAccountBalanceError ||
-        error instanceof InvalidPaymentAccountOwnershipError ||
-        error instanceof MissingAffectedObjectError ||
-        error instanceof FinancialTargetNotFoundError ||
-        error instanceof AmbiguousFinancialTargetError ||
-        error instanceof FinancialTargetOverpaymentError ||
-        error instanceof UnsafeReversalError
-      ) {
-        throw new InvalidConfirmationStateError(error.message);
+      const confirmationStateError = toConfirmationStateError(error);
+      if (confirmationStateError) {
+        throw confirmationStateError;
       }
       throw error;
     }

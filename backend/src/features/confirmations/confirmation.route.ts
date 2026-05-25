@@ -55,10 +55,11 @@ function handleConfirmationError(error: unknown, res: Response): boolean {
   }
 
   if (error instanceof InvalidConfirmationStateError) {
+    const errorCode = error.code ?? "CONFIRMATION_NOT_USABLE";
     res.status(409).json({
       success: false,
       error: {
-        code: "CONFIRMATION_NOT_USABLE",
+        code: errorCode,
         message: error.message,
       },
     });

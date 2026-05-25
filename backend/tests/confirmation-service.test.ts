@@ -30,7 +30,10 @@ vi.mock("../src/features/transactions/transaction.service.js", () => {
 });
 
 import { runFinancialWrite } from "../src/lib/financial-write.js";
-import { createBaseTransactionInTransaction } from "../src/features/transactions/transaction.service.js";
+import {
+  createBaseTransactionInTransaction,
+  InsufficientPaymentAccountBalanceError,
+} from "../src/features/transactions/transaction.service.js";
 import {
   cancelConfirmationRequest,
   confirmConfirmationRequest,
@@ -223,6 +226,25 @@ describe("confirmation service", () => {
         affectedObject: "Stok ayam",
       }),
     );
+  });
+
+  it("maps insufficient balance to a dedicated confirmation error code", async () => {
+    const { tx } = buildTx();
+    vi.mocked(runFinancialWrite).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(createBaseTransactionInTransaction).mockRejectedValue(
+      new InsufficientPaymentAccountBalanceError("Saldo kas tidak cukup."),
+    );
+
+    await expect(
+      confirmConfirmationRequest({
+        businessId: "biz_123",
+        userId: "user_123",
+        confirmationRequestId: "confirm_123",
+      }),
+    ).rejects.toMatchObject({
+      code: "INSUFFICIENT_BALANCE",
+      message: "Saldo kas tidak cukup.",
+    });
   });
 
   it("edits by cancelling the old confirmation and creating a new pending one", async () => {

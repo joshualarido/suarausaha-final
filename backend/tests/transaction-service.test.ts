@@ -13,7 +13,6 @@ import {
   createBaseTransactionInTransaction,
   FinancialTargetNotFoundError,
   FinancialTargetOverpaymentError,
-  InsufficientPaymentAccountBalanceError,
   InvalidTransactionAmountError,
   MissingAffectedObjectError,
   MissingPaymentAccountForTransactionError,
@@ -33,6 +32,7 @@ function buildTx(options?: {
             {
               id: "acct_cash",
               businessId: "biz_123",
+              name: "Kas",
               currentBalance: options?.currentBalance ?? "100000",
             },
           ],
@@ -470,7 +470,9 @@ describe("transaction service", () => {
         description: "Bayar listrik",
         paymentAccountId: "acct_cash",
       }),
-    ).rejects.toBeInstanceOf(InsufficientPaymentAccountBalanceError);
+    ).rejects.toThrow(
+      "Saldo Kas tidak cukup. Saldo Kas saat ini Rp50.000, tapi transaksi ini membutuhkan Rp100.000.",
+    );
 
     expect(state.insertedTransaction).toBeNull();
   });

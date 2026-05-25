@@ -55,7 +55,10 @@ import { app } from "../src/app.js";
 import { auth } from "../src/features/auth/auth.js";
 import { findBusinessByOwnerId } from "../src/features/business/business.service.js";
 import { parseChatMessage } from "../src/features/chat/chat.service.js";
-import { confirmConfirmationRequest } from "../src/features/confirmations/confirmation.service.js";
+import {
+  confirmConfirmationRequest,
+  InvalidConfirmationStateError,
+} from "../src/features/confirmations/confirmation.service.js";
 
 describe("chat and confirmation routes", () => {
   beforeEach(() => {
@@ -134,6 +137,23 @@ describe("chat and confirmation routes", () => {
       businessId: "biz_123",
       userId: "user_123",
       confirmationRequestId: "confirm_123",
+    });
+  });
+
+  it("returns INSUFFICIENT_BALANCE code when confirmation fails due to account balance", async () => {
+    const insufficientBalanceError = new InvalidConfirmationStateError("Saldo kas tidak cukup.");
+    Object.assign(insufficientBalanceError, { code: "INSUFFICIENT_BALANCE" });
+    vi.mocked(confirmConfirmationRequest).mockRejectedValue(insufficientBalanceError);
+
+    const response = await request(app).post("/api/v1/confirmations/confirm_123/confirm").send({});
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      success: false,
+      error: {
+        code: "INSUFFICIENT_BALANCE",
+        message: "Saldo kas tidak cukup.",
+      },
     });
   });
 });

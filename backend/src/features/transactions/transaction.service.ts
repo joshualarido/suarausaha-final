@@ -62,8 +62,16 @@ export class MissingPaymentAccountForTransactionError extends Error {
 }
 
 export class InsufficientPaymentAccountBalanceError extends Error {
-  constructor() {
-    super("Saldo akun pembayaran tidak cukup untuk transaksi ini.");
+  constructor(input?: { accountName?: string; currentBalance?: bigint; requiredAmount?: bigint }) {
+    if (!input || input.currentBalance === undefined || input.requiredAmount === undefined) {
+      super("Saldo akun pembayaran tidak cukup untuk transaksi ini.");
+      return;
+    }
+
+    const accountName = input.accountName?.trim() || "akun pembayaran";
+    super(
+      `Saldo ${accountName} tidak cukup. Saldo ${accountName} saat ini ${formatIdrFromBigInt(input.currentBalance)}, tapi transaksi ini membutuhkan ${formatIdrFromBigInt(input.requiredAmount)}.`,
+    );
   }
 }
 
@@ -127,6 +135,12 @@ function statusFromOutstanding(originalAmount: bigint, outstandingAmount: bigint
   return "open";
 }
 
+function formatIdrFromBigInt(value: bigint): string {
+  const absolute = value < 0n ? -value : value;
+  const formatted = absolute.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `Rp${formatted}`;
+}
+
 function paymentAccountDeltaForValidation(type: TransactionType, amount: bigint, hasPaymentAccount: boolean): bigint | null {
   switch (type) {
     case "sales_income":
@@ -151,14 +165,18 @@ function paymentAccountDeltaForValidation(type: TransactionType, amount: bigint,
 function validatePaymentAccountAvailability(
   type: TransactionType,
   amount: bigint,
-  paymentAccount: Pick<PaymentAccountRow, "currentBalance"> | null,
+  paymentAccount: Pick<PaymentAccountRow, "name" | "currentBalance"> | null,
 ): void {
   const delta = paymentAccountDeltaForValidation(type, amount, Boolean(paymentAccount));
   if (delta !== null && !paymentAccount) {
     throw new MissingPaymentAccountForTransactionError();
   }
   if (paymentAccount && delta !== null && BigInt(paymentAccount.currentBalance) + delta < 0n) {
-    throw new InsufficientPaymentAccountBalanceError();
+    throw new InsufficientPaymentAccountBalanceError({
+      accountName: paymentAccount.name,
+      currentBalance: BigInt(paymentAccount.currentBalance),
+      requiredAmount: delta < 0n ? -delta : amount,
+    });
   }
 }
 
@@ -199,12 +217,12 @@ async function insertTransactionEffect(
 async function getPaymentAccountForUpdate(
   tx: FinancialWriteTx,
   input: CreateBaseTransactionInput,
-): Promise<Pick<PaymentAccountRow, "id" | "businessId" | "currentBalance"> | null> {
+): Promise<Pick<PaymentAccountRow, "id" | "businessId" | "name" | "currentBalance"> | null> {
   if (!input.paymentAccountId) return null;
 
   const paymentAccount = await tx
     .selectFrom("payment_accounts")
-    .select(["id", "businessId", "currentBalance"])
+    .select(["id", "businessId", "name", "currentBalance"])
     .where("id", "=", input.paymentAccountId)
     .forUpdate()
     .executeTakeFirst();
@@ -220,7 +238,7 @@ async function applyPaymentAccountEffect(
   tx: FinancialWriteTx,
   input: {
     transaction: TransactionRow;
-    paymentAccount: Pick<PaymentAccountRow, "id" | "currentBalance"> | null;
+    paymentAccount: Pick<PaymentAccountRow, "id" | "name" | "currentBalance"> | null;
     delta: bigint;
     effectType: string;
     now: Date;
@@ -233,7 +251,11 @@ async function applyPaymentAccountEffect(
   const beforeAmount = BigInt(input.paymentAccount.currentBalance);
   const afterAmount = beforeAmount + input.delta;
   if (afterAmount < 0n) {
-    throw new InsufficientPaymentAccountBalanceError();
+    throw new InsufficientPaymentAccountBalanceError({
+      accountName: input.paymentAccount.name,
+      currentBalance: beforeAmount,
+      requiredAmount: input.delta < 0n ? -input.delta : 0n,
+    });
   }
 
   await tx
