@@ -1,22 +1,30 @@
 import { randomUUID } from "node:crypto";
 import { db, type ParsedCommandRow } from "../../lib/database.js";
-import { runFinancialWrite } from "../../lib/financial-write.js";
-import { listActiveMenuItemsByBusinessId } from "../menu-items/menu-item.service.js";
-import { listPaymentAccountsByBusinessId } from "../payment-accounts/payment-account.service.js";
-import { parserEngine } from "../parser/parser-engine.service.js";
-import type { ParseIntentInput, ParseIntentResult, ProposedAction } from "../parser/parser.types.js";
+import { runFinancialWrite, type FinancialWriteTx } from "../../lib/financial-write.js";
 import {
   cancelPendingConfirmationsInTransaction,
   createConfirmationRequest,
   toConfirmationResponse,
 } from "../confirmations/confirmation.service.js";
-import { appendChatMessage } from "./chat-message.service.js";
+import { listActiveMenuItemsByBusinessId } from "../menu-items/menu-item.service.js";
+import { listPaymentAccountsByBusinessId } from "../payment-accounts/payment-account.service.js";
+import { parserEngine } from "../parser/parser-engine.service.js";
+import type { ParseIntentInput, ParseIntentResult, ProposedAction } from "../parser/parser.types.js";
 import {
+  AmbiguousFinancialTargetError,
+  createBaseTransactionInTransaction,
+  FinancialTargetNotFoundError,
+  FinancialTargetOverpaymentError,
   InsufficientPaymentAccountBalanceError,
+  InvalidPaymentAccountOwnershipError,
+  MissingAffectedObjectError,
+  MissingPaymentAccountForTransactionError,
   NoReversibleTransactionError,
   reverseLatestTransactionForBusiness,
+  type TransactionType,
   UnsafeReversalError,
 } from "../transactions/transaction.service.js";
+import { appendChatMessage } from "./chat-message.service.js";
 
 export interface ParseChatMessageInput {
   businessId: string;
@@ -39,6 +47,13 @@ export type ChatParseResponse =
       confirmation: ReturnType<typeof toConfirmationResponse>;
     }
   | {
+      status: "saved_fast";
+      transactionId: string;
+      message: string;
+      proposedAction: ProposedAction;
+      captureMode: "auto_fast";
+    }
+  | {
       status: "requires_clarification";
       clarificationId: string;
       question: string;
@@ -49,6 +64,14 @@ export type ChatParseResponse =
       status: "cancelled_pending_confirmation";
       message: string;
     };
+
+const AUTO_WRITE_INTENTS = new Set<ProposedAction["intent"]>([
+  "sales_income",
+  "general_expense",
+  "owner_capital_contribution",
+  "owner_withdrawal",
+]);
+const AUTO_WRITE_MIN_CONFIDENCE = 0.8;
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -70,6 +93,33 @@ function isUndoIntentCommand(message: string): boolean {
     /\b(batalkan|batalin|batal)\s+transaksi\b/.test(normalized) ||
     /\bsalah\s+catat\b/.test(normalized)
   );
+}
+
+function isAutoWriteIntent(intent: ProposedAction["intent"]): boolean {
+  return AUTO_WRITE_INTENTS.has(intent);
+}
+
+function createLowConfidenceClarificationMessage(): string {
+  return "Aku belum cukup yakin untuk simpan otomatis. Tolong tulis ulang transaksi ini lebih spesifik ya.";
+}
+
+function toAutoWriteClarification(error: unknown): { message: string; missingFields: string[] } | null {
+  if (error instanceof MissingPaymentAccountForTransactionError || error instanceof InvalidPaymentAccountOwnershipError) {
+    return { message: error.message, missingFields: ["paymentAccountId"] };
+  }
+  if (error instanceof MissingAffectedObjectError || error instanceof AmbiguousFinancialTargetError) {
+    return { message: error.message, missingFields: ["affectedObject"] };
+  }
+  if (error instanceof FinancialTargetNotFoundError) {
+    return { message: error.message, missingFields: ["dependency"] };
+  }
+  if (error instanceof FinancialTargetOverpaymentError) {
+    return { message: error.message, missingFields: ["amount"] };
+  }
+  if (error instanceof InsufficientPaymentAccountBalanceError) {
+    return { message: error.message, missingFields: ["amount"] };
+  }
+  return null;
 }
 
 async function appendAssistantResultMessage(input: { businessId: string; userId: string; message: string; extra?: Record<string, unknown> }) {
@@ -269,6 +319,115 @@ async function createParserInput(
   };
 }
 
+async function createClarificationResult(input: {
+  tx: FinancialWriteTx;
+  businessId: string;
+  userId: string;
+  parsedCommandId: string;
+  detectedIntent: string;
+  structuredPayload: Record<string, unknown>;
+  question: string;
+  missingFields: string[];
+}): Promise<Extract<ChatParseResponse, { status: "requires_clarification" }>> {
+  await input.tx
+    .updateTable("parsed_commands")
+    .set({
+      detectedIntent: input.detectedIntent,
+      status: "needs_clarification",
+      structuredPayload: JSON.stringify(input.structuredPayload),
+      missingFields: JSON.stringify(input.missingFields),
+      validationErrors: JSON.stringify([]),
+      updatedAt: new Date(),
+    })
+    .where("id", "=", input.parsedCommandId)
+    .executeTakeFirst();
+
+  await appendChatMessage(input.tx, {
+    businessId: input.businessId,
+    userId: input.userId,
+    role: "assistant",
+    kind: "clarification",
+    parsedCommandId: input.parsedCommandId,
+    content: {
+      status: "requires_clarification",
+      clarificationId: input.parsedCommandId,
+      question: input.question,
+      options: [],
+      missingFields: input.missingFields,
+    },
+  });
+
+  return {
+    status: "requires_clarification",
+    clarificationId: input.parsedCommandId,
+    question: input.question,
+    options: [],
+    missingFields: input.missingFields,
+  };
+}
+
+async function autoSaveParsedAction(input: {
+  tx: FinancialWriteTx;
+  businessId: string;
+  userId: string;
+  parsedCommandId: string;
+  proposedAction: ProposedAction;
+}): Promise<ChatParseResponse> {
+  let transaction;
+  try {
+    transaction = await createBaseTransactionInTransaction(input.tx, {
+      businessId: input.businessId,
+      createdBy: input.userId,
+      type: input.proposedAction.intent as TransactionType,
+      amount: input.proposedAction.amount,
+      transactionDate: input.proposedAction.date,
+      description: input.proposedAction.description,
+      affectedObject: input.proposedAction.affectedObject,
+      paymentAccountId: input.proposedAction.paymentAccountId,
+      parsedCommandId: input.parsedCommandId,
+      confirmationRequestId: null,
+    });
+  } catch (error) {
+    const clarification = toAutoWriteClarification(error);
+    if (!clarification) throw error;
+    return createClarificationResult({
+      tx: input.tx,
+      businessId: input.businessId,
+      userId: input.userId,
+      parsedCommandId: input.parsedCommandId,
+      detectedIntent: input.proposedAction.intent,
+      structuredPayload: input.proposedAction as unknown as Record<string, unknown>,
+      question: clarification.message,
+      missingFields: clarification.missingFields,
+    });
+  }
+
+  const message = "Transaksi langsung disimpan. Kalau ada yang kurang tepat, bisa pakai Undo.";
+  await appendChatMessage(input.tx, {
+    businessId: input.businessId,
+    userId: input.userId,
+    role: "assistant",
+    kind: "system_result",
+    parsedCommandId: input.parsedCommandId,
+    transactionId: transaction.id,
+    content: {
+      status: "saved_fast",
+      transactionId: transaction.id,
+      captureMode: "auto_fast",
+      message,
+      proposedAction: input.proposedAction,
+    },
+  });
+
+  return {
+    status: "saved_fast",
+    transactionId: transaction.id,
+    message,
+    proposedAction: input.proposedAction,
+    captureMode: "auto_fast",
+  };
+}
+
 export async function parseChatMessage(input: ParseChatMessageInput): Promise<ChatParseResponse> {
   if (isCancelCommand(input.message)) {
     return runFinancialWrite(async (tx) => {
@@ -353,6 +512,29 @@ export async function parseChatMessage(input: ParseChatMessageInput): Promise<Ch
         options: parserResult.options,
         missingFields: parserResult.missingFields,
       };
+    }
+
+    if (isAutoWriteIntent(parserResult.proposedAction.intent) && parserResult.confidence < AUTO_WRITE_MIN_CONFIDENCE) {
+      return createClarificationResult({
+        tx,
+        businessId: input.businessId,
+        userId: input.userId,
+        parsedCommandId: parsedCommand.id,
+        detectedIntent: parserResult.proposedAction.intent,
+        structuredPayload: parserResult.proposedAction as unknown as Record<string, unknown>,
+        question: createLowConfidenceClarificationMessage(),
+        missingFields: ["confidence"],
+      });
+    }
+
+    if (isAutoWriteIntent(parserResult.proposedAction.intent)) {
+      return autoSaveParsedAction({
+        tx,
+        businessId: input.businessId,
+        userId: input.userId,
+        parsedCommandId: parsedCommand.id,
+        proposedAction: parserResult.proposedAction,
+      });
     }
 
     const confirmation = await createConfirmationRequest(tx, {
@@ -482,12 +664,18 @@ export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promis
       };
     }
 
-    const confirmation = await createConfirmationRequest(tx, {
-      businessId: input.businessId,
-      userId: input.userId,
-      parsedCommandId: command.id,
-      proposedAction: parserResult.proposedAction,
-    });
+    if (isAutoWriteIntent(parserResult.proposedAction.intent) && parserResult.confidence < AUTO_WRITE_MIN_CONFIDENCE) {
+      return createClarificationResult({
+        tx,
+        businessId: input.businessId,
+        userId: input.userId,
+        parsedCommandId: command.id,
+        detectedIntent: parserResult.proposedAction.intent,
+        structuredPayload: parserResult.proposedAction as unknown as Record<string, unknown>,
+        question: createLowConfidenceClarificationMessage(),
+        missingFields: ["confidence"],
+      });
+    }
 
     await tx
       .updateTable("parsed_commands")
@@ -501,6 +689,23 @@ export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promis
       })
       .where("id", "=", command.id)
       .executeTakeFirst();
+
+    if (isAutoWriteIntent(parserResult.proposedAction.intent)) {
+      return autoSaveParsedAction({
+        tx,
+        businessId: input.businessId,
+        userId: input.userId,
+        parsedCommandId: command.id,
+        proposedAction: parserResult.proposedAction,
+      });
+    }
+
+    const confirmation = await createConfirmationRequest(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      parsedCommandId: command.id,
+      proposedAction: parserResult.proposedAction,
+    });
 
     await appendChatMessage(tx, {
       businessId: input.businessId,

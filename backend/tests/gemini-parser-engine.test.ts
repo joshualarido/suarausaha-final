@@ -125,7 +125,7 @@ describe("Gemini parser draft validation", () => {
     ]);
   });
 
-  it("asks clarification when Gemini leaves amount missing", () => {
+  it("infers sales amount from menu default price when Gemini leaves amount missing", () => {
     const result = validateParserDraft(
       baseInput(),
       baseDraft({
@@ -136,10 +136,29 @@ describe("Gemini parser draft validation", () => {
       "gemini-3.1-flash-lite",
     );
 
-    expect(result.status).toBe("needs_clarification");
-    expect(result.missingFields).toContain("amount");
-    expect(result.question).toBe("Berapa nominal penjualannya?");
-    expect(result.proposedAction).toBeNull();
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent: "sales_income",
+      amount: 25_000,
+      affectedObject: "Ayam Geprek",
+    });
+    expect(result.proposedAction?.warning).toContain("Nominal diasumsikan 1 x harga menu Ayam Geprek");
+  });
+
+  it("uses detected quantity when inferring sales amount from menu price", () => {
+    const result = validateParserDraft(
+      baseInput({ message: "jual 2 ayam geprek tunai" }),
+      baseDraft({
+        amount: null,
+        missingFields: ["amount"],
+        description: "Jual ayam geprek tunai",
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction?.amount).toBe(50_000);
+    expect(result.proposedAction?.warning).toContain("Nominal dihitung dari 2 x harga menu Ayam Geprek");
   });
 
   it.each([0, -1, 12.5])("rejects invalid amount %s before confirmation", (amount) => {
@@ -214,6 +233,31 @@ describe("Gemini parser draft validation", () => {
 
     expect(result.status).toBe("needs_clarification");
     expect(result.missingFields).toContain("paymentAccountId");
+  });
+
+  it("prefers cash account from message keyword even when default account is non-cash", () => {
+    const result = validateParserDraft(
+      baseInput({
+        message: "jual ayam geprek tunai",
+        defaultPaymentAccountId: "acct_bank",
+        defaultPaymentAccountName: "BCA",
+        paymentAccounts: [
+          { id: "acct_bank", name: "BCA", type: "non_cash", isDefault: true },
+          { id: "acct_cash", name: "Kas", type: "cash", isDefault: false },
+        ],
+      }),
+      baseDraft({
+        paymentAccountId: null,
+        paymentAccountName: null,
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      paymentAccountId: "acct_cash",
+      paymentAccountName: "Kas",
+    });
   });
 
   it("asks user to create menu first when sales menu is not in catalog", () => {

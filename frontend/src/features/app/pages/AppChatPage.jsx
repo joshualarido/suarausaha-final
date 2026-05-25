@@ -60,6 +60,33 @@ function normalizeConfirmation(data) {
   };
 }
 
+function normalizeProposedAction(value) {
+  if (!value) return null;
+
+  const parsed = typeof value === "string" ? (() => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  })() : value;
+
+  if (!parsed || typeof parsed !== "object") return null;
+  if (typeof parsed.intent !== "string") return null;
+  if (typeof parsed.amount !== "number") return null;
+  if (typeof parsed.date !== "string") return null;
+  if (typeof parsed.description !== "string") return null;
+
+  return {
+    intent: parsed.intent,
+    amount: parsed.amount,
+    date: parsed.date,
+    paymentAccountName: parsed.paymentAccountName ?? null,
+    affectedObject: parsed.affectedObject ?? null,
+    description: parsed.description,
+  };
+}
+
 export function AppChatPage() {
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("idle");
@@ -118,6 +145,23 @@ export function AppChatPage() {
         }
 
         if (messageItem.kind === "system_result") {
+          if (content.status === "saved_fast") {
+            const proposedAction = normalizeProposedAction(content.proposedAction);
+            if (proposedAction) {
+              return {
+                id: messageItem.id,
+                role: "assistant",
+                type: "auto_write_summary",
+                data: {
+                  message: String(content.message ?? "Transaksi langsung disimpan."),
+                  transactionId: String(content.transactionId ?? ""),
+                  captureMode: String(content.captureMode ?? "auto_fast"),
+                  proposedAction,
+                },
+              };
+            }
+          }
+
           return {
             id: messageItem.id,
             role: "assistant",
@@ -582,6 +626,47 @@ export function AppChatPage() {
               );
             }
 
+            if (item.type === "auto_write_summary") {
+              const action = item.data.proposedAction;
+
+              return (
+                <div key={item.id} className="flex justify-start">
+                  <div className="max-w-[92%] rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-4">
+                    <p className="text-xs font-medium text-emerald-700">Tersimpan otomatis</p>
+                    <p className="mt-1 text-sm text-foreground">{item.data.message}</p>
+                    <dl className="mt-3 space-y-1 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted-foreground">Jenis</dt>
+                        <dd>{intentLabels[action.intent] ?? action.intent}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted-foreground">Jumlah</dt>
+                        <dd>{formatIdr(action.amount)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted-foreground">Tanggal</dt>
+                        <dd>{formatDateId(action.date)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted-foreground">Akun</dt>
+                        <dd>{action.paymentAccountName ?? "Kas"}</dd>
+                      </div>
+                      {action.affectedObject ? (
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-muted-foreground">Objek</dt>
+                          <dd className="text-right">{action.affectedObject}</dd>
+                        </div>
+                      ) : null}
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted-foreground">Keterangan</dt>
+                        <dd className="text-right">{action.description}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                </div>
+              );
+            }
+
             return null;
           })}
 
@@ -628,7 +713,7 @@ export function AppChatPage() {
 
         <p className="su-type-helper mt-4 flex items-center justify-center gap-2 text-muted-foreground">
           <LockKeyhole aria-hidden className="h-4 w-4" />
-          Transaksi baru akan disimpan setelah kamu konfirmasi.
+          Transaksi sederhana bisa langsung tersimpan. Transaksi lain tetap pakai konfirmasi.
         </p>
       </form>
     </section>

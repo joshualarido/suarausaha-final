@@ -16,7 +16,6 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquare,
-  User,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -48,7 +47,6 @@ const navigationGroups = [
     label: "Pengaturan",
     items: [
       { label: "Bisnis", href: "/app/settings/business", icon: Building2 },
-      { label: "Pengguna", href: "/app/settings/user", icon: User },
     ],
   },
 ];
@@ -105,9 +103,13 @@ export function DashboardLayout() {
       user: "Pengguna",
       history: "Riwayat",
     };
+    const bisnisSections = new Set(["reports", "transactions", "catalog", "menu", "stock", "assets", "liabilities", "receivables"]);
     const segments = location.pathname.split("/").filter(Boolean).slice(1);
     if (segments.length === 0) {
       return ["Obrolan"];
+    }
+    if (bisnisSections.has(segments[0])) {
+      return ["Bisnis", pathToLabel[segments[0]] ?? segments[0]];
     }
     return segments.map((segment) => pathToLabel[segment] ?? segment);
   }, [location.pathname]);
@@ -295,7 +297,7 @@ export function DashboardLayout() {
             <section className="relative mt-auto pt-6">
               {isProfileMenuOpen ? (
                 <div
-                  className="motion-enter-up absolute right-0 bottom-[calc(100%+0.5rem)] left-0 z-20 rounded-lg border border-border bg-card p-3 shadow-lg"
+                  className="motion-enter-up absolute right-0 bottom-full left-0 z-20 mb-1 rounded-lg border border-border bg-card p-3 shadow-lg"
                   role="menu"
                 >
                   <Button

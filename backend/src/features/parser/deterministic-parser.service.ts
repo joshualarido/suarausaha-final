@@ -70,6 +70,28 @@ function parseQuantityBeforeMenuItem(message: string, menuItem: ParserMenuItemCo
   return null;
 }
 
+function parsePaymentHint(message: string): "cash" | "non_cash" | null {
+  const normalized = normalizeInput(message);
+  if (/\b(tunai|kas|cash)\b/.test(normalized)) return "cash";
+  if (/\b(transfer|qris|debit|bank|ewallet|e-wallet)\b/.test(normalized)) return "non_cash";
+  return null;
+}
+
+function resolveDeterministicPaymentAccount(input: ParseIntentInput) {
+  const paymentHint = parsePaymentHint(input.message);
+  if (paymentHint) {
+    const matchedByHint = input.paymentAccounts.filter((account) => account.type === paymentHint);
+    if (matchedByHint.length === 1) return matchedByHint[0];
+  }
+
+  return (
+    input.paymentAccounts.find((account) => account.id === input.defaultPaymentAccountId) ??
+    input.paymentAccounts.find((account) => account.isDefault) ??
+    input.paymentAccounts[0] ??
+    null
+  );
+}
+
 function findMatchingMenuItems(message: string, menuItems: ParserMenuItemContext[]): ParserMenuItemContext[] {
   const normalizedMessage = normalizeSearchText(message);
 
@@ -93,7 +115,8 @@ export function createDeterministicProposedAction(
     warning?: string | null;
   },
 ): ProposedAction {
-  const accountName = input.defaultPaymentAccountName ?? "Kas";
+  const account = resolveDeterministicPaymentAccount(input);
+  const accountName = account?.name ?? input.defaultPaymentAccountName ?? "Kas";
   const incoming = intent === "sales_income" || intent === "owner_capital_contribution";
   const inventory = intent === "inventory_purchase_value";
   const expense = intent === "general_expense";
@@ -109,12 +132,12 @@ export function createDeterministicProposedAction(
     intent,
     amount,
     date: input.today,
-    paymentAccountId: input.defaultPaymentAccountId,
-    paymentAccountName: input.defaultPaymentAccountName,
+    paymentAccountId: account?.id ?? input.defaultPaymentAccountId,
+    paymentAccountName: account?.name ?? input.defaultPaymentAccountName,
     description: baseDescription(input.message),
     affectedObject: context?.affectedObject ?? (inventory ? "Persediaan" : null),
     expectedEffects,
-    warning: context?.warning ?? (inventory || expense ? "Saldo akun pembayaran akan diperiksa lagi saat konfirmasi." : null),
+    warning: context?.warning ?? (inventory || expense ? "Saldo akun pembayaran akan diperiksa lagi sebelum disimpan." : null),
   };
 }
 
@@ -199,9 +222,10 @@ export function createDeterministicIntentParser(): IntentParser {
 
       if (matchingMenuItems.length === 1) {
         const [menuItem] = matchingMenuItems;
-        const quantity = parseQuantityBeforeMenuItem(input.message, menuItem);
+        const parsedQuantity = parseQuantityBeforeMenuItem(input.message, menuItem);
+        const quantity = parsedQuantity ?? 1;
 
-        if (!quantity || menuItem.defaultPrice === null) {
+        if (menuItem.defaultPrice === null) {
           return {
             status: "needs_clarification",
             proposedAction: null,
@@ -226,7 +250,10 @@ export function createDeterministicIntentParser(): IntentParser {
         const amountFromMenu = quantity * menuItem.defaultPrice;
         const proposedAction = createDeterministicProposedAction(input, "sales_income", amountFromMenu, {
           affectedObject: menuItem.name,
-          warning: `Nominal dihitung dari ${quantity} x harga menu ${menuItem.name}. Periksa lagi sebelum konfirmasi.`,
+          warning:
+            parsedQuantity === null
+              ? `Nominal diasumsikan 1 x harga menu ${menuItem.name}. Periksa lagi sebelum disimpan.`
+              : `Nominal dihitung dari ${quantity} x harga menu ${menuItem.name}. Periksa lagi sebelum disimpan.`,
         });
 
         return {

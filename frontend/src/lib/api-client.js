@@ -99,11 +99,15 @@ export async function apiRequest(path, options = {}) {
     throw new ApiClientError(message, response.status, payload);
   }
 
-  const shouldNotifySuccess =
-    typeof notifyOnSuccess === "boolean" ? notifyOnSuccess : methodUpper !== "GET" && methodUpper !== "HEAD";
+  const shouldNotifySuccess = typeof notifyOnSuccess === "function"
+    ? Boolean(notifyOnSuccess(payload))
+    : typeof notifyOnSuccess === "boolean"
+      ? notifyOnSuccess
+      : false;
 
   if (shouldNotifySuccess) {
-    const message = successMessage || extractSuccessMessageFromPayload(payload) || defaultSuccessMessage(methodUpper);
+    const resolvedSuccessMessage = typeof successMessage === "function" ? successMessage(payload) : successMessage;
+    const message = resolvedSuccessMessage || extractSuccessMessageFromPayload(payload) || defaultSuccessMessage(methodUpper);
     emitAppNotification({
       title: "Proses selesai",
       description: message,
@@ -174,7 +178,8 @@ export async function parseChatMessage(message) {
   return apiRequest("/api/v1/chat/parse", {
     method: "POST",
     body: { message },
-    notifyOnSuccess: false,
+    notifyOnSuccess: (payload) => payload?.data?.status === "saved_fast",
+    successMessage: (payload) => payload?.data?.message || "Transaksi langsung disimpan.",
   });
 }
 
@@ -196,7 +201,8 @@ export async function clarifyChatMessage(clarificationId, answer) {
   return apiRequest("/api/v1/chat/clarify", {
     method: "POST",
     body: { clarificationId, answer },
-    notifyOnSuccess: false,
+    notifyOnSuccess: (payload) => payload?.data?.status === "saved_fast",
+    successMessage: (payload) => payload?.data?.message || "Transaksi langsung disimpan.",
   });
 }
 
@@ -204,6 +210,7 @@ export async function confirmConfirmation(confirmationRequestId) {
   return apiRequest(`/api/v1/confirmations/${confirmationRequestId}/confirm`, {
     method: "POST",
     body: {},
+    notifyOnSuccess: true,
   });
 }
 

@@ -19,10 +19,21 @@ function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function normalizeSearchText(value: string): string {
+  return normalize(value).replace(/[^\p{L}\p{N}\s]/gu, "");
+}
+
 function isValidDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function parsePaymentHint(message: string): "cash" | "non_cash" | null {
+  const normalized = normalize(message);
+  if (/\b(tunai|kas|cash)\b/.test(normalized)) return "cash";
+  if (/\b(transfer|qris|debit|bank|ewallet|e-wallet)\b/.test(normalized)) return "non_cash";
+  return null;
 }
 
 function resolvePaymentAccount(input: ParseIntentInput, draft: GeminiParserDraft) {
@@ -37,6 +48,13 @@ function resolvePaymentAccount(input: ParseIntentInput, draft: GeminiParserDraft
     );
     if (matchedByName.length === 1) return matchedByName[0];
     if (matchedByName.length > 1) return "ambiguous" as const;
+  }
+
+  const paymentHint = parsePaymentHint(input.message);
+  if (paymentHint) {
+    const matchedByHint = input.paymentAccounts.filter((account) => account.type === paymentHint);
+    if (matchedByHint.length === 1) return matchedByHint[0];
+    if (matchedByHint.length > 1) return "ambiguous" as const;
   }
 
   const defaultAccount =
@@ -58,6 +76,26 @@ function findMenuMatches(input: ParseIntentInput, draft: GeminiParserDraft) {
       menuTerms.some((menuTerm) => menuTerm.includes(searchTerm) || searchTerm.includes(menuTerm)),
     );
   });
+}
+
+function parseQuantityBeforeMenuItem(message: string, menuItem: ParseIntentInput["menuItems"][number]): number | null {
+  const normalizedMessage = normalizeSearchText(message);
+  const candidates = compactUnique([menuItem.name, ...menuItem.aliases]).map(normalizeSearchText).filter(Boolean);
+
+  for (const candidate of candidates) {
+    const index = normalizedMessage.indexOf(candidate);
+    if (index < 0) continue;
+
+    const beforeCandidate = normalizedMessage.slice(0, index).trim();
+    const quantityMatch = beforeCandidate.match(/(\d+)\s*$/);
+    if (!quantityMatch) return null;
+
+    const quantity = Number(quantityMatch[1]);
+    if (Number.isInteger(quantity) && quantity > 0) return quantity;
+    return null;
+  }
+
+  return null;
 }
 
 function findLiabilityMatches(input: ParseIntentInput, target: string) {
@@ -161,6 +199,9 @@ export function validateParserDraft(
 
   const missingFields = [...draft.missingFields];
   const validationErrors: string[] = [];
+  let inferredAmount: number | null = null;
+  let inferredSalesQuantity: number | null = null;
+  let inferredSalesMenuName: string | null = null;
 
   if (!draft.detectedIntent || !supportedIntentSchema.safeParse(draft.detectedIntent).success) {
     missingFields.push("intent");
@@ -229,7 +270,22 @@ export function validateParserDraft(
       });
     }
 
-    normalizedAffectedObject = matchedMenus[0].name;
+    const [matchedMenu] = matchedMenus;
+    normalizedAffectedObject = matchedMenu.name;
+    inferredSalesMenuName = matchedMenu.name;
+
+    if ((draft.amount === null || draft.amount === undefined) && matchedMenu.defaultPrice !== null) {
+      inferredSalesQuantity = parseQuantityBeforeMenuItem(input.message, matchedMenu) ?? 1;
+      inferredAmount = inferredSalesQuantity * matchedMenu.defaultPrice;
+    }
+  }
+
+  if (inferredAmount !== null) {
+    for (let index = missingFields.length - 1; index >= 0; index -= 1) {
+      if (missingFields[index] === "amount") {
+        missingFields.splice(index, 1);
+      }
+    }
   }
 
   if (normalizedIntent === "liability_payment") {
@@ -333,7 +389,7 @@ export function validateParserDraft(
 
   const actionBase = {
     intent: draft.detectedIntent!,
-    amount: draft.amount!,
+    amount: inferredAmount ?? draft.amount!,
     date,
     paymentAccountId: account?.id ?? null,
     paymentAccountName: account?.name ?? null,
@@ -341,9 +397,18 @@ export function validateParserDraft(
     affectedObject: normalizedAffectedObject,
   };
 
+  const assumptionNotes = [...draft.assumptions];
+  if (inferredAmount !== null && inferredSalesQuantity !== null && inferredSalesMenuName) {
+    if (inferredSalesQuantity === 1) {
+      assumptionNotes.push(`Nominal diasumsikan 1 x harga menu ${inferredSalesMenuName}`);
+    } else {
+      assumptionNotes.push(`Nominal dihitung dari ${inferredSalesQuantity} x harga menu ${inferredSalesMenuName}`);
+    }
+  }
+
   const warning =
-    draft.assumptions.length > 0
-      ? `Asumsi parser: ${draft.assumptions.join("; ")}. Periksa lagi sebelum konfirmasi.`
+    assumptionNotes.length > 0
+      ? `Asumsi parser: ${assumptionNotes.join("; ")}. Periksa lagi sebelum disimpan.`
       : null;
 
   const proposedAction = proposedActionSchema.parse({

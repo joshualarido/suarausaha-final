@@ -1103,6 +1103,7 @@ export interface TransactionHistoryItem {
     id: string;
     name: string;
   } | null;
+  captureMode: "auto_fast" | "confirmed_flow";
   createdAt: Date;
 }
 
@@ -1236,6 +1237,7 @@ interface TransactionHistoryRow {
   createdAt: Date;
   paymentAccountId: string | null;
   paymentAccountName: string | null;
+  confirmationRequestId: string | null;
   proposedActionJson: unknown;
 }
 
@@ -1256,6 +1258,7 @@ function toTransactionHistoryItem(row: TransactionHistoryRow): TransactionHistor
             name: row.paymentAccountName,
           }
         : null,
+    captureMode: row.confirmationRequestId ? "confirmed_flow" : "auto_fast",
     createdAt: row.createdAt,
   };
 }
@@ -1312,6 +1315,7 @@ export async function listTransactionHistoryByBusinessId(input: ListTransactionH
       "tx.isReversal",
       "tx.createdAt",
       "tx.paymentAccountId",
+      "tx.confirmationRequestId",
       "pa.name as paymentAccountName",
       "cr.proposedActionJson",
     ])

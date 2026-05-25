@@ -55,11 +55,25 @@ vi.mock("../src/features/parser/parser-engine.service.js", () => {
 });
 
 vi.mock("../src/features/transactions/transaction.service.js", () => {
+  class MissingPaymentAccountForTransactionError extends Error {}
+  class InvalidPaymentAccountOwnershipError extends Error {}
+  class MissingAffectedObjectError extends Error {}
+  class FinancialTargetNotFoundError extends Error {}
+  class AmbiguousFinancialTargetError extends Error {}
+  class FinancialTargetOverpaymentError extends Error {}
+
   return {
     reverseLatestTransactionForBusiness: vi.fn(),
+    createBaseTransactionInTransaction: vi.fn(),
     NoReversibleTransactionError: class NoReversibleTransactionError extends Error {},
     UnsafeReversalError: class UnsafeReversalError extends Error {},
     InsufficientPaymentAccountBalanceError: class InsufficientPaymentAccountBalanceError extends Error {},
+    MissingPaymentAccountForTransactionError,
+    InvalidPaymentAccountOwnershipError,
+    MissingAffectedObjectError,
+    FinancialTargetNotFoundError,
+    AmbiguousFinancialTargetError,
+    FinancialTargetOverpaymentError,
   };
 });
 
