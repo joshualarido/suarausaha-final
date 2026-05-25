@@ -1,0 +1,224 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { GeminiParserDraft } from "../src/features/parser/gemini-parser.types.js";
+import type { ParseIntentInput } from "../src/features/parser/parser.types.js";
+import { validateParserDraft } from "../src/features/parser/parser-validator.service.js";
+import { buildPrompt } from "../src/features/parser/gemini-parser.adapter.js";
+
+const expectedIntentOptions = [
+  "sales_income",
+  "general_expense",
+  "inventory_purchase_value",
+  "asset_record_or_purchase",
+  "liability_created",
+  "liability_payment",
+  "receivable_created",
+  "receivable_payment",
+  "owner_capital_contribution",
+  "owner_withdrawal",
+  "reversal",
+];
+
+function baseInput(overrides: Partial<ParseIntentInput> = {}): ParseIntentInput {
+  return {
+    message: "jual ayam geprek 50000 tunai",
+    businessId: "biz_123",
+    userId: "user_123",
+    today: "2026-05-25",
+    defaultPaymentAccountId: "acct_cash",
+    defaultPaymentAccountName: "Kas",
+    paymentAccounts: [{ id: "acct_cash", name: "Kas", type: "cash", isDefault: true }],
+    menuItems: [
+      {
+        id: "menu_ayam_geprek",
+        name: "Ayam Geprek",
+        aliases: ["geprek"],
+        defaultPrice: 25_000,
+        category: "Makanan",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function baseDraft(overrides: Partial<GeminiParserDraft> = {}): GeminiParserDraft {
+  return {
+    detectedIntent: "sales_income",
+    amount: 50_000,
+    date: "2026-05-25",
+    paymentAccountId: "acct_cash",
+    paymentAccountName: "Kas",
+    description: "Jual ayam geprek tunai",
+    affectedObject: "Ayam Geprek",
+    assumptions: [],
+    missingFields: [],
+    clarificationQuestion: null,
+    confidence: 0.9,
+    multipleEvents: false,
+    ...overrides,
+  };
+}
+
+describe("Gemini parser prompt", () => {
+  it("includes the full intent catalog with labels, required fields, and examples", () => {
+    const prompt = JSON.parse(buildPrompt(baseInput())) as {
+      intentCatalog: Array<{
+        intent: string;
+        label: string;
+        requiredFields: string[];
+        examples: string[];
+      }>;
+      clarificationRules: string[];
+    };
+
+    expect(prompt.intentCatalog.map((item) => item.intent)).toEqual(expectedIntentOptions);
+    expect(prompt.intentCatalog).toContainEqual(
+      expect.objectContaining({
+        intent: "sales_income",
+        label: "Pemasukan penjualan",
+        requiredFields: expect.arrayContaining(["amount", "date", "description"]),
+        examples: expect.arrayContaining(["jual ayam geprek 50000 tunai"]),
+      }),
+    );
+    expect(prompt.clarificationRules).toContain(
+      "If the transaction type is unclear, ask: Transaksi ini paling cocok dicatat sebagai apa?",
+    );
+  });
+});
+
+describe("Gemini parser draft validation", () => {
+  it("turns a valid Gemini sales draft into a confirmation-safe proposed action", () => {
+    const result = validateParserDraft(baseInput(), baseDraft(), "gemini-3.1-flash-lite");
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent: "sales_income",
+      amount: 50_000,
+      date: "2026-05-25",
+      paymentAccountId: "acct_cash",
+      paymentAccountName: "Kas",
+      affectedObject: "Ayam Geprek",
+    });
+    expect(result.proposedAction?.expectedEffects).toEqual([
+      "Kas bertambah Rp50.000",
+      "Pendapatan bertambah Rp50.000",
+    ]);
+  });
+
+  it("asks clarification when Gemini leaves amount missing", () => {
+    const result = validateParserDraft(
+      baseInput(),
+      baseDraft({
+        amount: null,
+        missingFields: ["amount"],
+        clarificationQuestion: "Berapa nominal penjualannya?",
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("amount");
+    expect(result.question).toBe("Berapa nominal penjualannya?");
+    expect(result.proposedAction).toBeNull();
+  });
+
+  it.each([0, -1, 12.5])("rejects invalid amount %s before confirmation", (amount) => {
+    const result = validateParserDraft(baseInput(), baseDraft({ amount }), "gemini-3.1-flash-lite");
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("amount");
+    expect(result.validationErrors).toContain("Amount must be a positive integer.");
+  });
+
+  it("asks clarification for unsupported intents", () => {
+    const result = validateParserDraft(
+      baseInput(),
+      baseDraft({ detectedIntent: "profit_loss_report" as GeminiParserDraft["detectedIntent"] }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("intent");
+    expect(result.validationErrors).toContain("Intent is not supported.");
+    expect(result.question).toBe("Transaksi ini paling cocok dicatat sebagai apa?");
+    expect(result.options.map((option) => option.value)).toEqual(expectedIntentOptions);
+  });
+
+  it("asks the user to choose from all supported intents when confidence is low", () => {
+    const result = validateParserDraft(
+      baseInput(),
+      baseDraft({ detectedIntent: null, confidence: 0.2, missingFields: ["intent"] }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.question).toBe("Transaksi ini paling cocok dicatat sebagai apa?");
+    expect(result.options.map((option) => option.value)).toEqual(expectedIntentOptions);
+  });
+
+  it("asks user to split messages with multiple transaction events", () => {
+    const result = validateParserDraft(
+      baseInput({ message: "jual ayam 50000 dan bayar listrik 20000" }),
+      baseDraft({ multipleEvents: true }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("single_event");
+  });
+
+  it("discloses menu-derived assumptions in the warning", () => {
+    const result = validateParserDraft(
+      baseInput(),
+      baseDraft({ assumptions: ["Nominal dihitung dari 2 x harga menu Ayam Geprek"] }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction?.warning).toContain("Nominal dihitung dari 2 x harga menu Ayam Geprek");
+  });
+
+  it("asks clarification when payment account name is ambiguous", () => {
+    const result = validateParserDraft(
+      baseInput({
+        paymentAccounts: [
+          { id: "acct_1", name: "Kas", type: "cash", isDefault: false },
+          { id: "acct_2", name: "Kas", type: "cash", isDefault: false },
+        ],
+        defaultPaymentAccountId: null,
+        defaultPaymentAccountName: null,
+      }),
+      baseDraft({ paymentAccountId: null, paymentAccountName: "Kas" }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("paymentAccountId");
+  });
+});
+
+describe("Gemini parser engine", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    process.env.PARSER_ENGINE = "gemini";
+    process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
+  });
+
+  it("returns a safe intent-guided clarification when Gemini is unavailable", async () => {
+    const { GeminiParserUnavailableError } = await import("../src/features/parser/gemini-parser.adapter.js");
+    const { createParserEngine } = await import("../src/features/parser/parser-engine.service.js");
+    const parser = createParserEngine({
+      async parseDraft() {
+        throw new GeminiParserUnavailableError();
+      },
+    });
+
+    const result = await parser.parse(baseInput());
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("parser");
+    expect(result.question).toBe("Aku belum bisa membaca transaksi ini dengan aman. Transaksi ini mau dicatat sebagai apa?");
+    expect(result.options.map((option) => option.value)).toEqual(expectedIntentOptions);
+    expect(result.parserModel).toBe("gemini-3.1-flash-lite");
+  });
+});

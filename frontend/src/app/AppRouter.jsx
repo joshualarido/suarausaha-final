@@ -12,9 +12,11 @@ import { AppBusinessSettingsPage } from "@/features/app/pages/AppBusinessSetting
 import { AppChatPage } from "@/features/app/pages/AppChatPage";
 import { AppHistoryPage } from "@/features/app/pages/AppHistoryPage";
 import { AppLiabilitiesPage } from "@/features/app/pages/AppLiabilitiesPage";
+import { AppMenuPage } from "@/features/app/pages/AppMenuPage";
 import { AppOverviewPage } from "@/features/app/pages/AppOverviewPage";
 import { AppReportsPage } from "@/features/app/pages/AppReportsPage";
 import { AppStockPage } from "@/features/app/pages/AppStockPage";
+import { AppTransactionsPage } from "@/features/app/pages/AppTransactionsPage";
 import { AppUserSettingsPage } from "@/features/app/pages/AppUserSettingsPage";
 import { LoginPage } from "@/features/auth/pages/LoginPage";
 import { ApiTesterPage } from "@/features/docs/ApiTesterPage";
@@ -47,13 +49,14 @@ export function AppRouter() {
             <Route index element={<AppChatPage />} />
             <Route path="overview" element={<AppOverviewPage />} />
             <Route path="reports" element={<AppReportsPage />} />
+            <Route path="menu" element={<AppMenuPage />} />
             <Route path="stock" element={<AppStockPage />} />
             <Route path="assets" element={<AppAssetsPage />} />
             <Route path="liabilities" element={<AppLiabilitiesPage />} />
             <Route path="settings/business" element={<AppBusinessSettingsPage />} />
             <Route path="settings/user" element={<AppUserSettingsPage />} />
             <Route path="history" element={<AppHistoryPage />} />
-            <Route path="transactions" element={<Navigate to="/app/history" replace />} />
+            <Route path="transactions" element={<AppTransactionsPage />} />
             <Route path="neraca" element={<Navigate to="/app/reports" replace />} />
             <Route path="business" element={<Navigate to="/app/settings/business" replace />} />
             <Route path="settings" element={<Navigate to="/app/settings/user" replace />} />

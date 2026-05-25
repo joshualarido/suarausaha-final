@@ -26,6 +26,21 @@ export const proposedActionSchema = z.object({
 
 export type ProposedAction = z.infer<typeof proposedActionSchema>;
 
+export interface ParserMenuItemContext {
+  id: string;
+  name: string;
+  aliases: string[];
+  defaultPrice: number | null;
+  category: string | null;
+}
+
+export interface ParserPaymentAccountContext {
+  id: string;
+  name: string;
+  type: "cash" | "non_cash";
+  isDefault: boolean;
+}
+
 export interface ParseIntentInput {
   message: string;
   businessId: string;
@@ -33,6 +48,13 @@ export interface ParseIntentInput {
   today: string;
   defaultPaymentAccountId: string | null;
   defaultPaymentAccountName: string | null;
+  paymentAccounts: ParserPaymentAccountContext[];
+  menuItems: ParserMenuItemContext[];
+  clarification?: {
+    originalMessage: string;
+    previousPayload: Record<string, unknown>;
+    answer: string;
+  };
 }
 
 export type ParseIntentResult =
@@ -62,4 +84,3 @@ export type ParseIntentResult =
 export interface IntentParser {
   parse(input: ParseIntentInput): Promise<ParseIntentResult>;
 }
-

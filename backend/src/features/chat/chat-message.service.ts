@@ -107,6 +107,19 @@ export async function listChatMessagesForBusinessUser(input: {
     .execute();
 }
 
+export async function clearChatThreadForBusinessUser(input: {
+  businessId: string;
+  userId: string;
+}): Promise<number> {
+  const deletedSessions = await db
+    .deleteFrom("chat_sessions")
+    .where("businessId", "=", input.businessId)
+    .where("userId", "=", input.userId)
+    .executeTakeFirst();
+
+  return Number(deletedSessions.numDeletedRows ?? 0);
+}
+
 export function toChatMessageResponse(message: ChatMessageRow) {
   return {
     id: message.id,

@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { db, type ParsedCommandRow } from "../../lib/database.js";
 import { runFinancialWrite } from "../../lib/financial-write.js";
+import { listActiveMenuItemsByBusinessId } from "../menu-items/menu-item.service.js";
 import { listPaymentAccountsByBusinessId } from "../payment-accounts/payment-account.service.js";
-import {
-  createDeterministicProposedAction,
-  deterministicIntentParser,
-} from "../parser/deterministic-parser.service.js";
-import type { ProposedAction } from "../parser/parser.types.js";
+import { parserEngine } from "../parser/parser-engine.service.js";
+import type { ParseIntentInput, ParseIntentResult, ProposedAction } from "../parser/parser.types.js";
 import {
   cancelPendingConfirmationsInTransaction,
   createConfirmationRequest,
@@ -59,17 +57,52 @@ function isCancelCommand(message: string): boolean {
   return normalized === "batalkan" || normalized === "batal" || normalized === "cancel";
 }
 
-async function getDefaultPaymentAccountContext(businessId: string) {
+async function getPaymentAccountContext(businessId: string) {
   const accounts = await listPaymentAccountsByBusinessId(businessId);
   const defaultAccount = accounts.find((account) => account.isDefault) ?? accounts[0] ?? null;
 
   return {
     defaultPaymentAccountId: defaultAccount?.id ?? null,
     defaultPaymentAccountName: defaultAccount?.name ?? null,
+    paymentAccounts: accounts.map((account) => ({
+      id: account.id,
+      name: account.name,
+      type: account.type,
+      isDefault: account.isDefault,
+    })),
   };
 }
 
-function parsedCommandValues(input: ParseChatMessageInput, parserResult: Awaited<ReturnType<typeof deterministicIntentParser.parse>>) {
+function parseMenuAliases(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+async function getParserMenuContext(businessId: string) {
+  const menuItems = await listActiveMenuItemsByBusinessId(businessId);
+
+  return menuItems.map((item) => ({
+    id: item.id,
+    name: item.name,
+    aliases: parseMenuAliases(item.aliases),
+    defaultPrice: item.defaultPrice === null ? null : Number(item.defaultPrice),
+    category: item.category,
+  }));
+}
+
+function parsedCommandValues(input: ParseChatMessageInput, parserResult: ParseIntentResult) {
   const now = new Date();
   const structuredPayload = parserResult.structuredPayload as Record<string, unknown>;
 
@@ -90,6 +123,24 @@ function parsedCommandValues(input: ParseChatMessageInput, parserResult: Awaited
     status: parserResult.status,
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+async function createParserInput(
+  input: ParseChatMessageInput,
+  clarification?: ParseIntentInput["clarification"],
+): Promise<ParseIntentInput> {
+  const [accountContext, menuItems] = await Promise.all([
+    getPaymentAccountContext(input.businessId),
+    getParserMenuContext(input.businessId),
+  ]);
+
+  return {
+    ...input,
+    ...accountContext,
+    menuItems,
+    today: todayIso(),
+    clarification,
   };
 }
 
@@ -131,12 +182,7 @@ export async function parseChatMessage(input: ParseChatMessageInput): Promise<Ch
     });
   }
 
-  const accountContext = await getDefaultPaymentAccountContext(input.businessId);
-  const parserResult = await deterministicIntentParser.parse({
-    ...input,
-    ...accountContext,
-    today: todayIso(),
-  });
+  const parserResult = await parserEngine.parse(await createParserInput(input));
 
   return runFinancialWrite(async (tx) => {
     await appendChatMessage(tx, {
@@ -212,13 +258,23 @@ export async function parseChatMessage(input: ParseChatMessageInput): Promise<Ch
 }
 
 function readStructuredPayload(command: ParsedCommandRow): Record<string, unknown> {
-  return command.structuredPayload && typeof command.structuredPayload === "object"
-    ? (command.structuredPayload as Record<string, unknown>)
-    : {};
+  if (command.structuredPayload && typeof command.structuredPayload === "object") {
+    return command.structuredPayload as Record<string, unknown>;
+  }
+
+  if (typeof command.structuredPayload === "string") {
+    try {
+      const parsed = JSON.parse(command.structuredPayload);
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
 }
 
 export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promise<ChatParseResponse> {
-
   const command = await db
     .selectFrom("parsed_commands")
     .selectAll()
@@ -231,28 +287,20 @@ export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promis
     throw new Error("Clarification request not found.");
   }
 
-  if (input.answer !== "inventory_purchase_value" && input.answer !== "general_expense") {
-    throw new Error("Clarification answer is not supported.");
-  }
-
   const payload = readStructuredPayload(command);
-  const amount = typeof payload.amount === "number" ? payload.amount : null;
-
-  if (!amount) {
-    throw new Error("Clarification is missing amount.");
-  }
-
-  const accountContext = await getDefaultPaymentAccountContext(input.businessId);
-  const proposedAction = createDeterministicProposedAction(
-    {
-      businessId: input.businessId,
-      userId: input.userId,
-      message: command.rawInputText,
-      today: todayIso(),
-      ...accountContext,
-    },
-    input.answer,
-    amount,
+  const parserResult = await parserEngine.parse(
+    await createParserInput(
+      {
+        businessId: input.businessId,
+        userId: input.userId,
+        message: command.rawInputText,
+      },
+      {
+        originalMessage: command.rawInputText,
+        previousPayload: payload,
+        answer: input.answer,
+      },
+    ),
   );
 
   return runFinancialWrite(async (tx) => {
@@ -267,20 +315,59 @@ export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promis
       },
     });
 
+    if (parserResult.status === "needs_clarification") {
+      await tx
+        .updateTable("parsed_commands")
+        .set({
+          detectedIntent: String(parserResult.structuredPayload.detectedIntent ?? command.detectedIntent ?? ""),
+          status: "needs_clarification",
+          structuredPayload: JSON.stringify(parserResult.structuredPayload),
+          missingFields: JSON.stringify(parserResult.missingFields),
+          validationErrors: JSON.stringify(parserResult.validationErrors),
+          updatedAt: new Date(),
+        })
+        .where("id", "=", command.id)
+        .executeTakeFirst();
+
+      await appendChatMessage(tx, {
+        businessId: input.businessId,
+        userId: input.userId,
+        role: "assistant",
+        kind: "clarification",
+        parsedCommandId: command.id,
+        content: {
+          status: "requires_clarification",
+          clarificationId: command.id,
+          question: parserResult.question,
+          options: parserResult.options,
+          missingFields: parserResult.missingFields,
+        },
+      });
+
+      return {
+        status: "requires_clarification",
+        clarificationId: command.id,
+        question: parserResult.question,
+        options: parserResult.options,
+        missingFields: parserResult.missingFields,
+      };
+    }
+
     const confirmation = await createConfirmationRequest(tx, {
       businessId: input.businessId,
       userId: input.userId,
       parsedCommandId: command.id,
-      proposedAction,
+      proposedAction: parserResult.proposedAction,
     });
 
     await tx
       .updateTable("parsed_commands")
       .set({
-        detectedIntent: input.answer,
+        detectedIntent: parserResult.proposedAction.intent,
         status: "parsed",
-        structuredPayload: JSON.stringify(proposedAction),
+        structuredPayload: JSON.stringify(parserResult.proposedAction),
         missingFields: JSON.stringify([]),
+        validationErrors: JSON.stringify([]),
         updatedAt: new Date(),
       })
       .where("id", "=", command.id)
@@ -296,7 +383,7 @@ export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promis
       content: {
         status: "requires_confirmation",
         confirmationRequestId: confirmation.id,
-        proposedAction,
+        proposedAction: parserResult.proposedAction,
         confirmation: toConfirmationResponse(confirmation),
       },
     });
@@ -304,7 +391,7 @@ export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promis
     return {
       status: "requires_confirmation",
       confirmationRequestId: confirmation.id,
-      proposedAction,
+      proposedAction: parserResult.proposedAction,
       confirmation: toConfirmationResponse(confirmation),
     };
   });

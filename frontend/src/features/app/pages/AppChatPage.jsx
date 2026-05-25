@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
-import { Check, Hourglass, LockKeyhole, MessageCircle, Mic, Paperclip, Pencil, Send, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Hourglass, LockKeyhole, MessageCircle, Mic, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   cancelConfirmation,
   clarifyChatMessage,
   confirmConfirmation,
   editConfirmation,
+  clearChatThread,
   parseChatMessage,
   getChatThread,
 } from "@/lib/api-client";
+import { formatDateId } from "@/lib/date-format";
 
 const examplePrompts = [
   "Jual ayam geprek 500 ribu tunai",
@@ -70,6 +72,8 @@ export function AppChatPage() {
     description: "",
   });
   const [pendingConfirmationRequestId, setPendingConfirmationRequestId] = useState(null);
+  const [isClearingChat, setIsClearingChat] = useState(false);
+  const chatScrollRef = useRef(null);
 
   function hydrateChatItemsFromThread(messages) {
     return messages
@@ -162,6 +166,19 @@ export function AppChatPage() {
     setChatItems((current) => [...current, { id: crypto.randomUUID(), ...item }]);
   }
 
+  function scrollChatToBottom(behavior = "smooth") {
+    if (!chatScrollRef.current) return;
+    chatScrollRef.current.scrollTo({
+      top: chatScrollRef.current.scrollHeight,
+      behavior,
+    });
+  }
+
+  useEffect(() => {
+    if (threadLoading) return;
+    scrollChatToBottom(chatItems.length <= 1 ? "auto" : "smooth");
+  }, [chatItems.length, status, threadLoading]);
+
   function appendSystemMessage(text) {
     appendChatItem({
       role: "assistant",
@@ -176,13 +193,26 @@ export function AppChatPage() {
     if (!message.trim() || status === "loading") return;
 
     const submittedMessage = message.trim();
+    const latestChatItem = chatItems[chatItems.length - 1];
+    const activeClarification = latestChatItem?.type === "clarification" ? latestChatItem : null;
+
+    appendChatItem({
+      role: "user",
+      type: "text",
+      text: submittedMessage,
+    });
+
     setMessage("");
     setStatus("loading");
     setIsEditing(false);
     setActiveConfirmation(null);
 
     try {
-      await parseChatMessage(submittedMessage);
+      if (activeClarification) {
+        await clarifyChatMessage(activeClarification.data.clarificationId, submittedMessage);
+      } else {
+        await parseChatMessage(submittedMessage);
+      }
       await refreshChatThread();
       setStatus("idle");
     } catch (error) {
@@ -268,6 +298,27 @@ export function AppChatPage() {
     }
   }
 
+  async function handleClearChat() {
+    if (isBusy || isClearingChat) return;
+
+    setIsClearingChat(true);
+    setStatus("loading");
+    setIsEditing(false);
+    setActiveConfirmation(null);
+
+    try {
+      await clearChatThread();
+      setChatItems([]);
+      setPendingConfirmationRequestId(null);
+      setStatus("idle");
+    } catch (error) {
+      appendSystemMessage(error.message || "Riwayat chat belum bisa dibersihkan.");
+      setStatus("idle");
+    } finally {
+      setIsClearingChat(false);
+    }
+  }
+
   const isBusy = status === "loading";
 
   if (threadLoading) {
@@ -286,8 +337,9 @@ export function AppChatPage() {
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <header className="border-b border-border bg-card px-4 py-3 md:px-5">
-        <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
+      <header className="border-b border-border bg-card px-4 py-4 md:px-6">
+        <div className="flex w-full items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
           <div className="h-11 w-11 rounded-full border border-border bg-secondary/50" aria-hidden />
           <div className="min-w-0">
             <p className="su-type-ui truncate text-foreground">Sura Assistant</p>
@@ -299,10 +351,22 @@ export function AppChatPage() {
             </div>
           </div>
         </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isBusy || isClearingChat}
+            onClick={handleClearChat}
+            className="h-9 gap-2 px-3"
+          >
+            <Trash2 aria-hidden className="h-4 w-4" />
+            {isClearingChat ? "Membersihkan..." : "Clear Chat"}
+          </Button>
+        </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-4 md:px-3">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
+      <div ref={chatScrollRef} className="su-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+        <div className="flex w-full flex-col gap-3">
           {chatItems.length === 0 ? (
             <div className="rounded-xl border border-border bg-secondary/20 p-5 text-left">
               <h2 className="su-type-section-title text-foreground">Mulai catat transaksi lewat chat</h2>
@@ -423,7 +487,7 @@ export function AppChatPage() {
                           </div>
                           <div className="flex justify-between gap-3">
                             <dt className="text-muted-foreground">Tanggal</dt>
-                            <dd>{proposedAction.date}</dd>
+                            <dd>{formatDateId(proposedAction.date)}</dd>
                           </div>
                           <div className="flex justify-between gap-3">
                             <dt className="text-muted-foreground">Akun</dt>

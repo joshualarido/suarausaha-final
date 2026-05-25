@@ -111,6 +111,31 @@
     @apply font-sans;
   }
 
+  button,
+  [role="button"] {
+    cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease,
+      transform 160ms ease;
+  }
+
+  button:disabled,
+  button[aria-disabled="true"],
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  a[href],
+  summary {
+    cursor: pointer;
+    transition: color 160ms ease, background-color 160ms ease;
+  }
+
+  input:not([type="text"]):not([type="email"]):not([type="password"]):not([type="number"]):not([type="date"]),
+  select,
+  textarea {
+    transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  }
+
   code {
     font-family: "Consolas", "Courier New", monospace;
   }
@@ -357,6 +382,31 @@ small {
 }
 
 @layer utilities {
+  .su-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+
+  .su-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .su-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .su-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.28);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  .su-scrollbar:hover::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.42);
+  }
+
   .motion-enter-up {
     animation: motion-enter-up 180ms cubic-bezier(0.22, 0.61, 0.36, 1);
   }

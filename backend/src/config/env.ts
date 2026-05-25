@@ -13,6 +13,9 @@ const envSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(16).default("development-secret-not-for-prod"),
   GOOGLE_CLIENT_ID: z.string().min(1).default("dev-google-client-id"),
   GOOGLE_CLIENT_SECRET: z.string().min(1).default("dev-google-client-secret"),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().min(1).default("gemini-3.1-flash-lite"),
+  PARSER_ENGINE: z.enum(["gemini", "deterministic"]).default("gemini"),
   DATABASE_URL: z.string().min(1).default("postgresql://postgres:postgres@localhost:5432/suarausaha_dev?schema=public"),
 });
 

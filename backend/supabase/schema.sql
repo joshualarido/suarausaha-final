@@ -56,3 +56,18 @@ CREATE TABLE IF NOT EXISTS "business" (
   "createdAt" timestamptz NOT NULL DEFAULT now(),
   "updatedAt" timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS "menu_items" (
+  "id" text PRIMARY KEY,
+  "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+  "name" text NOT NULL,
+  "aliases" jsonb NOT NULL DEFAULT '[]'::jsonb,
+  "defaultPrice" bigint,
+  "category" text,
+  "status" text NOT NULL DEFAULT 'active' CHECK ("status" IN ('active', 'inactive')),
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  "updatedAt" timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS "menu_items_business_status_idx"
+ON "menu_items" ("businessId", "status");

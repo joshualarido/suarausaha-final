@@ -33,6 +33,18 @@ export interface PaymentAccountRow {
   updatedAt: Date;
 }
 
+export interface MenuItemRow {
+  id: string;
+  businessId: string;
+  name: string;
+  aliases: unknown;
+  defaultPrice: string | null;
+  category: string | null;
+  status: "active" | "inactive";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface OpeningBalanceRow {
   id: string;
   businessId: string;
@@ -133,6 +145,7 @@ export interface DatabaseSchema {
   user: UserRow;
   business: BusinessRow;
   payment_accounts: PaymentAccountRow;
+  menu_items: MenuItemRow;
   opening_balances: OpeningBalanceRow;
   parsed_commands: ParsedCommandRow;
   confirmation_requests: ConfirmationRequestRow;
@@ -252,6 +265,25 @@ export async function ensureDatabaseSchema(): Promise<void> {
   await sql`
     ALTER TABLE "payment_accounts"
     DROP CONSTRAINT IF EXISTS "payment_accounts_businessId_type_key";
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "menu_items" (
+      "id" text PRIMARY KEY,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "name" text NOT NULL,
+      "aliases" jsonb NOT NULL DEFAULT '[]'::jsonb,
+      "defaultPrice" bigint,
+      "category" text,
+      "status" text NOT NULL DEFAULT 'active' CHECK ("status" IN ('active', 'inactive')),
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS "menu_items_business_status_idx"
+    ON "menu_items" ("businessId", "status");
   `.execute(db);
 
   await sql`
