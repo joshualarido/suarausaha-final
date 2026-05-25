@@ -1,51 +1,17 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session-context";
-import { ApiClientError, getCurrentUser, updateCurrentUserProfile } from "@/lib/api-client";
+import { ApiClientError, updateCurrentUserProfile } from "@/lib/api-client";
 
 export function AppUserSettingsPage() {
   const session = useSession();
-  const [name, setName] = useState("");
-  const [savedName, setSavedName] = useState("");
-  const [email, setEmail] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [name, setName] = useState(session.user?.name ?? "");
+  const [savedName, setSavedName] = useState(session.user?.name ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadUserProfile() {
-      setIsLoading(true);
-      setErrorMessage("");
-
-      try {
-        const payload = await getCurrentUser();
-        if (!mounted) return;
-        const nextName = payload?.data?.name ?? "";
-        setName(nextName);
-        setSavedName(nextName);
-        setEmail(payload?.data?.email ?? "");
-      } catch (error) {
-        if (!mounted) return;
-        const fallback = "Gagal memuat data pengguna.";
-        const message =
-          error instanceof ApiClientError || error instanceof Error ? error.message || fallback : fallback;
-        setErrorMessage(message);
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    loadUserProfile();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const email = session.user?.email ?? "";
 
   async function handleSave(event) {
     event.preventDefault();
@@ -88,9 +54,6 @@ export function AppUserSettingsPage() {
         <p className="su-type-helper mt-1 text-muted-foreground">Lihat detail akun kamu dan ubah nama pengguna.</p>
       </header>
 
-      {isLoading ? (
-        <p className="su-type-helper mt-6 text-muted-foreground">Memuat data pengguna...</p>
-      ) : (
         <form onSubmit={handleSave} className="mt-6 grid gap-5">
           <div className="grid gap-2">
             <label htmlFor="user-email" className="su-type-ui text-foreground">
@@ -128,7 +91,6 @@ export function AppUserSettingsPage() {
             </Button>
           </div>
         </form>
-      )}
     </section>
   );
 }

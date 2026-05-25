@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { db, ensureDatabaseSchema, type ParsedCommandRow } from "../../lib/database.js";
+import { db, type ParsedCommandRow } from "../../lib/database.js";
 import { runFinancialWrite } from "../../lib/financial-write.js";
 import { listPaymentAccountsByBusinessId } from "../payment-accounts/payment-account.service.js";
 import {
@@ -94,7 +94,6 @@ function parsedCommandValues(input: ParseChatMessageInput, parserResult: Awaited
 }
 
 export async function parseChatMessage(input: ParseChatMessageInput): Promise<ChatParseResponse> {
-  await ensureDatabaseSchema();
   if (isCancelCommand(input.message)) {
     return runFinancialWrite(async (tx) => {
       await appendChatMessage(tx, {
@@ -219,7 +218,6 @@ function readStructuredPayload(command: ParsedCommandRow): Record<string, unknow
 }
 
 export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promise<ChatParseResponse> {
-  await ensureDatabaseSchema();
 
   const command = await db
     .selectFrom("parsed_commands")

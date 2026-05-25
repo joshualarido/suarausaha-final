@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { ApiClientError, getCurrentUser } from "@/lib/api-client";
+import { ApiClientError, getBusinessProfile, getCurrentUser } from "@/lib/api-client";
 
 const SessionContext = createContext(null);
 
@@ -8,11 +8,13 @@ const INITIAL_SESSION_STATE = {
   user: null,
   hasBusiness: false,
   businessId: null,
+  businessName: null,
   onboardingStatus: null,
 };
 
-function normalizeAuthenticatedSession(responsePayload) {
-  const data = responsePayload && typeof responsePayload === "object" ? responsePayload.data : null;
+function normalizeAuthenticatedSession(userPayload, businessPayload) {
+  const data = userPayload && typeof userPayload === "object" ? userPayload.data : null;
+  const businessData = businessPayload && typeof businessPayload === "object" ? businessPayload.data : null;
 
   return {
     status: "authenticated",
@@ -25,6 +27,7 @@ function normalizeAuthenticatedSession(responsePayload) {
       : null,
     hasBusiness: Boolean(data?.hasBusiness),
     businessId: data?.businessId ?? null,
+    businessName: businessData?.name ?? null,
     onboardingStatus: data?.onboardingStatus ?? null,
   };
 }
@@ -35,6 +38,7 @@ function unauthenticatedSession() {
     user: null,
     hasBusiness: false,
     businessId: null,
+    businessName: null,
     onboardingStatus: null,
   };
 }
@@ -49,8 +53,11 @@ export function SessionProvider({ children }) {
     }));
 
     try {
-      const payload = await getCurrentUser();
-      setSession(normalizeAuthenticatedSession(payload));
+      const [userPayload, businessPayload] = await Promise.all([
+        getCurrentUser(),
+        getBusinessProfile().catch(() => null),
+      ]);
+      setSession(normalizeAuthenticatedSession(userPayload, businessPayload));
       return;
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 401) {
@@ -71,9 +78,12 @@ export function SessionProvider({ children }) {
 
     async function loadSession() {
       try {
-        const payload = await getCurrentUser();
+        const [userPayload, businessPayload] = await Promise.all([
+          getCurrentUser(),
+          getBusinessProfile().catch(() => null),
+        ]);
         if (!mounted) return;
-        setSession(normalizeAuthenticatedSession(payload));
+        setSession(normalizeAuthenticatedSession(userPayload, businessPayload));
       } catch (error) {
         if (!mounted) return;
 

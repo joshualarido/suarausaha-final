@@ -143,6 +143,9 @@ export interface DatabaseSchema {
 
 const pool = new Pool({
   connectionString: env.DATABASE_URL,
+  max: 8,
+  min: 1,
+  connectionTimeoutMillis: 10_000,
   ssl: env.DATABASE_URL.includes("sslmode=require") || env.DATABASE_URL.includes("sslmode=required")
     ? {
         rejectUnauthorized: false,
@@ -150,11 +153,20 @@ const pool = new Pool({
     : undefined,
 });
 
+pool.on("error", (err) => {
+  console.error("Unexpected database pool error:", err);
+});
+
 export const db = new Kysely<DatabaseSchema>({
   dialect: new PostgresDialect({ pool }),
 });
 
+let schemaEnsured = false;
+
 export async function ensureDatabaseSchema(): Promise<void> {
+  if (schemaEnsured) return;
+
+  try {
   await sql`
     CREATE TABLE IF NOT EXISTS "user" (
       "id" text PRIMARY KEY,
@@ -359,4 +371,10 @@ export async function ensureDatabaseSchema(): Promise<void> {
     ALTER TABLE "transactions"
     ADD COLUMN IF NOT EXISTS "parsedCommandId" text REFERENCES "parsed_commands"("id") ON DELETE SET NULL;
   `.execute(db);
+
+    schemaEnsured = true;
+  } catch (err) {
+    console.error("Failed to ensure database schema:", err);
+    throw err;
+  }
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { db, ensureDatabaseSchema, type BusinessRow } from "../../lib/database.js";
+import { db, type BusinessRow } from "../../lib/database.js";
 import { runFinancialWrite } from "../../lib/financial-write.js";
 import { getConfirmedOpeningBalanceByBusinessId } from "../opening-balance/opening-balance.service.js";
 import { ensureDefaultPaymentAccounts } from "../payment-accounts/payment-account.service.js";
@@ -25,8 +25,6 @@ export function resolveOnboardingStatus(
 }
 
 export async function findBusinessByOwnerId(ownerId: string): Promise<BusinessRow | null> {
-  await ensureDatabaseSchema();
-
   const business = await db
     .selectFrom("business")
     .selectAll()
@@ -61,7 +59,6 @@ export async function createBusinessForOwner(ownerId: string, name: string): Pro
 }
 
 export async function updateBusinessNameForOwner(ownerId: string, name: string): Promise<BusinessRow | null> {
-  await ensureDatabaseSchema();
 
   const existingBusiness = await findBusinessByOwnerId(ownerId);
 

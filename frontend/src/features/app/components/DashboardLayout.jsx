@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session-context";
-import { ApiClientError, debugResetOnboarding, getBusinessProfile, signOutUser } from "@/lib/api-client";
+import { ApiClientError, debugResetOnboarding, signOutUser } from "@/lib/api-client";
 import { BrandLogo } from "./BrandLogo";
 
 const navigationGroups = [
@@ -72,7 +72,6 @@ function getInitial(name) {
 export function DashboardLayout() {
   const session = useSession();
   const navigate = useNavigate();
-  const [businessName, setBusinessName] = useState("Usaha Kamu");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isResettingOnboarding, setIsResettingOnboarding] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -81,28 +80,7 @@ export function DashboardLayout() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const userInitial = useMemo(() => getInitial(session.user?.name), [session.user?.name]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadBusinessName() {
-      try {
-        const payload = await getBusinessProfile();
-        if (!mounted) return;
-        setBusinessName(payload?.data?.name ?? "Usaha Kamu");
-      } catch (error) {
-        if (import.meta.env.DEV) {
-          console.error("Failed to load business profile.", error);
-        }
-      }
-    }
-
-    loadBusinessName();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const businessName = session.businessName ?? "Usaha Kamu";
 
   async function handleSignOut() {
     setIsSigningOut(true);

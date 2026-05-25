@@ -61,6 +61,7 @@ export function AppChatPage() {
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("idle");
   const [chatItems, setChatItems] = useState([]);
+  const [threadLoading, setThreadLoading] = useState(true);
   const [activeConfirmation, setActiveConfirmation] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editFields, setEditFields] = useState({
@@ -143,6 +144,10 @@ export function AppChatPage() {
         setChatItems(hydrateChatItemsFromThread(messages));
       } catch {
         // Keep empty-state if thread cannot be loaded.
+      } finally {
+        if (mounted) {
+          setThreadLoading(false);
+        }
       }
     }
 
@@ -264,6 +269,20 @@ export function AppChatPage() {
   }
 
   const isBusy = status === "loading";
+
+  if (threadLoading) {
+    return (
+      <section className="flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex flex-col items-center gap-4 px-4 py-10 text-center">
+          <Hourglass className="h-10 w-10 animate-spin text-primary" aria-hidden />
+          <div>
+            <h2 className="su-type-section-title text-foreground">Memuat obrolan...</h2>
+            <p className="su-type-body mt-1 text-muted-foreground">Mohon tunggu sebentar.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">

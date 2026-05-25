@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { db, ensureDatabaseSchema, type ChatMessageRow } from "../../lib/database.js";
+import { db, type ChatMessageRow } from "../../lib/database.js";
 import type { FinancialWriteTx } from "../../lib/financial-write.js";
 
 export interface ChatMessageContent {
@@ -95,8 +95,6 @@ export async function listChatMessagesForBusinessUser(input: {
   userId: string;
   limit?: number;
 }): Promise<ChatMessageRow[]> {
-  await ensureDatabaseSchema();
-
   const limit = Math.max(1, Math.min(input.limit ?? 100, 200));
 
   return db

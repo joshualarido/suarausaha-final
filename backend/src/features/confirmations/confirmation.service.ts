@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { db, ensureDatabaseSchema, type ConfirmationRequestRow } from "../../lib/database.js";
+import { db, type ConfirmationRequestRow } from "../../lib/database.js";
 import { runFinancialWrite, type FinancialWriteTx } from "../../lib/financial-write.js";
 import {
   createBaseTransactionInTransaction,
@@ -39,8 +39,6 @@ export async function listPendingIntentConfirmations(input: {
   userId: string;
   limit?: number;
 }): Promise<ConfirmationRequestRow[]> {
-  await ensureDatabaseSchema();
-
   const limit = Math.max(1, Math.min(input.limit ?? 50, 200));
 
   return db
@@ -188,8 +186,6 @@ export async function createConfirmationRequest(
 }
 
 export async function getConfirmationRequestForUser(input: ConfirmConfirmationRequestInput): Promise<ConfirmationRequestRow> {
-  await ensureDatabaseSchema();
-
   const confirmation = await db
     .selectFrom("confirmation_requests")
     .selectAll()

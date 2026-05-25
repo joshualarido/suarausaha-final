@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Selectable } from "kysely";
-import { db, ensureDatabaseSchema, type PaymentAccountRow } from "../../lib/database.js";
+import { db, type PaymentAccountRow } from "../../lib/database.js";
 import { runFinancialWrite, type FinancialWriteTx } from "../../lib/financial-write.js";
 
 export type PaymentAccount = Selectable<PaymentAccountRow>;
@@ -31,8 +31,6 @@ export const DEFAULT_PAYMENT_ACCOUNTS = {
 };
 
 export async function listPaymentAccountsByBusinessId(businessId: string): Promise<PaymentAccount[]> {
-  await ensureDatabaseSchema();
-
   return db
     .selectFrom("payment_accounts")
     .selectAll()
@@ -162,7 +160,6 @@ export async function createPaymentAccountForBusiness(
   businessId: string,
   name: string,
 ): Promise<PaymentAccount> {
-  await ensureDatabaseSchema();
 
   return runFinancialWrite(async (tx) => {
     const existing = await tx

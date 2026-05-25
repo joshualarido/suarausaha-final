@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { runFinancialWrite } from "../../lib/financial-write.js";
-import { db, ensureDatabaseSchema, type OpeningBalanceRow } from "../../lib/database.js";
+import { db, type OpeningBalanceRow } from "../../lib/database.js";
 import { seedDefaultPaymentAccounts } from "../payment-accounts/payment-account.service.js";
 
 export interface OpeningBalanceInput {
@@ -57,7 +57,6 @@ export function previewOpeningBalance(input: OpeningBalanceInput): OpeningBalanc
 }
 
 export async function getConfirmedOpeningBalanceByBusinessId(businessId: string): Promise<OpeningBalanceRow | null> {
-  await ensureDatabaseSchema();
 
   const record = await db
     .selectFrom("opening_balances")
