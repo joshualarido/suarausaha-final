@@ -40,6 +40,7 @@ vi.mock("../src/features/transactions/transaction.service.js", () => {
     getInventorySummaryByBusinessId: vi.fn(),
     getAssetSummaryByBusinessId: vi.fn(),
     getLiabilitySummaryByBusinessId: vi.fn(),
+    getReceivableSummaryByBusinessId: vi.fn(),
   };
 });
 
@@ -50,6 +51,7 @@ import {
   getAssetSummaryByBusinessId,
   getInventorySummaryByBusinessId,
   getLiabilitySummaryByBusinessId,
+  getReceivableSummaryByBusinessId,
   listTransactionHistoryByBusinessId,
 } from "../src/features/transactions/transaction.service.js";
 
@@ -184,6 +186,30 @@ describe("transaction read routes", () => {
     expect(response.status).toBe(200);
     expect(getLiabilitySummaryByBusinessId).toHaveBeenCalledWith("biz_123");
     expect(response.body.data.totalOutstandingAmount).toBe(700000);
+  });
+
+  it("returns receivables summary", async () => {
+    vi.mocked(getReceivableSummaryByBusinessId).mockResolvedValue({
+      totalOriginalAmount: 500_000,
+      totalOutstandingAmount: 300_000,
+      items: [
+        {
+          id: "receivable-1",
+          customerName: "Budi",
+          originalAmount: 500_000,
+          outstandingAmount: 300_000,
+          status: "partial",
+          createdDate: "2026-05-24",
+          sourceTransactionId: "txn_654",
+        },
+      ],
+    } as never);
+
+    const response = await request(app).get("/api/v1/receivables");
+
+    expect(response.status).toBe(200);
+    expect(getReceivableSummaryByBusinessId).toHaveBeenCalledWith("biz_123");
+    expect(response.body.data.totalOutstandingAmount).toBe(300000);
   });
 
   it("returns 404 if authenticated user has no business", async () => {

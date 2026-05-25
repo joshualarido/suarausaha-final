@@ -3,6 +3,14 @@ import { db, type ConfirmationRequestRow } from "../../lib/database.js";
 import { runFinancialWrite, type FinancialWriteTx } from "../../lib/financial-write.js";
 import {
   createBaseTransactionInTransaction,
+  AmbiguousFinancialTargetError,
+  FinancialTargetNotFoundError,
+  FinancialTargetOverpaymentError,
+  InsufficientPaymentAccountBalanceError,
+  InvalidPaymentAccountOwnershipError,
+  MissingAffectedObjectError,
+  MissingPaymentAccountForTransactionError,
+  UnsafeReversalError,
   type TransactionType,
 } from "../transactions/transaction.service.js";
 import { proposedActionSchema, type ProposedAction } from "../parser/parser.types.js";
@@ -287,17 +295,35 @@ export async function confirmConfirmationRequest(
     }
 
     const proposedAction = parseAction(confirmation.proposedActionJson);
-    const transaction = await createBaseTransactionInTransaction(tx, {
-      businessId: input.businessId,
-      createdBy: input.userId,
-      type: proposedAction.intent as TransactionType,
-      amount: proposedAction.amount,
-      transactionDate: proposedAction.date,
-      description: proposedAction.description,
-      paymentAccountId: proposedAction.paymentAccountId,
-      confirmationRequestId: confirmation.id,
-      parsedCommandId: confirmation.parsedCommandId,
-    });
+    let transaction;
+    try {
+      transaction = await createBaseTransactionInTransaction(tx, {
+        businessId: input.businessId,
+        createdBy: input.userId,
+        type: proposedAction.intent as TransactionType,
+        amount: proposedAction.amount,
+        transactionDate: proposedAction.date,
+        description: proposedAction.description,
+        affectedObject: proposedAction.affectedObject,
+        paymentAccountId: proposedAction.paymentAccountId,
+        confirmationRequestId: confirmation.id,
+        parsedCommandId: confirmation.parsedCommandId,
+      });
+    } catch (error) {
+      if (
+        error instanceof MissingPaymentAccountForTransactionError ||
+        error instanceof InsufficientPaymentAccountBalanceError ||
+        error instanceof InvalidPaymentAccountOwnershipError ||
+        error instanceof MissingAffectedObjectError ||
+        error instanceof FinancialTargetNotFoundError ||
+        error instanceof AmbiguousFinancialTargetError ||
+        error instanceof FinancialTargetOverpaymentError ||
+        error instanceof UnsafeReversalError
+      ) {
+        throw new InvalidConfirmationStateError(error.message);
+      }
+      throw error;
+    }
 
     await tx
       .updateTable("confirmation_requests")

@@ -238,6 +238,13 @@ export async function removePaymentAccount(paymentAccountId) {
   });
 }
 
+export async function setDefaultPaymentAccount(paymentAccountId) {
+  return apiRequest(`/api/v1/payment-accounts/${paymentAccountId}/default`, {
+    method: "PATCH",
+    body: {},
+  });
+}
+
 export async function createMenuItem(menuItem) {
   return apiRequest("/api/v1/menu-items", {
     method: "POST",

@@ -7,8 +7,25 @@ vi.mock("../src/lib/financial-write.js", () => {
 });
 
 vi.mock("../src/features/transactions/transaction.service.js", () => {
+  class InvalidPaymentAccountOwnershipError extends Error {}
+  class MissingPaymentAccountForTransactionError extends Error {}
+  class InsufficientPaymentAccountBalanceError extends Error {}
+  class MissingAffectedObjectError extends Error {}
+  class FinancialTargetNotFoundError extends Error {}
+  class AmbiguousFinancialTargetError extends Error {}
+  class FinancialTargetOverpaymentError extends Error {}
+  class UnsafeReversalError extends Error {}
+
   return {
     createBaseTransactionInTransaction: vi.fn(),
+    InvalidPaymentAccountOwnershipError,
+    MissingPaymentAccountForTransactionError,
+    InsufficientPaymentAccountBalanceError,
+    MissingAffectedObjectError,
+    FinancialTargetNotFoundError,
+    AmbiguousFinancialTargetError,
+    FinancialTargetOverpaymentError,
+    UnsafeReversalError,
   };
 });
 
@@ -172,6 +189,40 @@ describe("confirmation service", () => {
 
     expect(result.transactionId).toBe("txn_123");
     expect(createBaseTransactionInTransaction).not.toHaveBeenCalled();
+  });
+
+  it("passes affected object into the transaction effects engine when confirming", async () => {
+    const { tx } = buildTx({
+      proposedActionJson: {
+        intent: "inventory_purchase_value",
+        amount: 200_000,
+        date: "2026-05-23",
+        paymentAccountId: "acct_cash",
+        paymentAccountName: "Kas",
+        description: "Beli stok ayam",
+        affectedObject: "Stok ayam",
+        expectedEffects: ["Kas berkurang Rp200.000", "Nilai persediaan bertambah Rp200.000"],
+        warning: null,
+      },
+    });
+    vi.mocked(runFinancialWrite).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(createBaseTransactionInTransaction).mockResolvedValue({
+      id: "txn_123",
+    } as never);
+
+    await confirmConfirmationRequest({
+      businessId: "biz_123",
+      userId: "user_123",
+      confirmationRequestId: "confirm_123",
+    });
+
+    expect(createBaseTransactionInTransaction).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        type: "inventory_purchase_value",
+        affectedObject: "Stok ayam",
+      }),
+    );
   });
 
   it("edits by cancelling the old confirmation and creating a new pending one", async () => {

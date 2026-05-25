@@ -7,7 +7,6 @@ const emptyDraft = {
   name: "",
   aliasesText: "",
   defaultPriceText: "",
-  category: "",
 };
 
 function normalizeError(error, fallback) {
@@ -33,7 +32,6 @@ function toDraft(menuItem) {
     name: menuItem.name ?? "",
     aliasesText: aliasesToText(menuItem.aliases),
     defaultPriceText: menuItem.defaultPrice === null || menuItem.defaultPrice === undefined ? "" : String(menuItem.defaultPrice),
-    category: menuItem.category ?? "",
   };
 }
 
@@ -50,11 +48,10 @@ function toPayload(draft) {
     name: draft.name.trim(),
     aliases: textToAliases(draft.aliasesText),
     defaultPrice: parsePrice(draft.defaultPriceText),
-    category: draft.category.trim() || null,
   };
 }
 
-export function AppMenuPage() {
+export function AppCatalogPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [menuItems, setMenuItems] = useState([]);
   const [drafts, setDrafts] = useState({});
@@ -92,7 +89,7 @@ export function AppMenuPage() {
         );
       } catch (error) {
         if (!mounted) return;
-        setPageError(normalizeError(error, "Gagal memuat menu."));
+        setPageError(normalizeError(error, "Gagal memuat katalog."));
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -128,12 +125,12 @@ export function AppMenuPage() {
     const payload = toPayload(newDraft);
 
     if (!payload.name) {
-      setMessage("Nama menu wajib diisi.");
+      setMessage("Nama item wajib diisi.");
       return;
     }
 
     if (newDraft.defaultPriceText.trim() && payload.defaultPrice === null) {
-      setMessage("Harga menu harus berupa angka lebih dari 0.");
+      setMessage("Harga item harus berupa angka lebih dari 0.");
       return;
     }
 
@@ -144,7 +141,7 @@ export function AppMenuPage() {
       const response = await createMenuItem(payload);
       const created = response?.data;
       if (!created) {
-        throw new Error("Menu gagal dibuat.");
+        throw new Error("Item katalog gagal dibuat.");
       }
 
       setMenuItems((previous) => [...previous, created]);
@@ -153,9 +150,9 @@ export function AppMenuPage() {
         [created.id]: toDraft(created),
       }));
       setNewDraft(emptyDraft);
-      setMessage("Menu berhasil ditambahkan.");
+      setMessage("Item katalog berhasil ditambahkan.");
     } catch (error) {
-      setMessage(normalizeError(error, "Gagal menambahkan menu."));
+      setMessage(normalizeError(error, "Gagal menambahkan item katalog."));
     } finally {
       setIsAdding(false);
     }
@@ -166,12 +163,12 @@ export function AppMenuPage() {
     const payload = toPayload(draft);
 
     if (!payload.name) {
-      setMessage("Nama menu wajib diisi.");
+      setMessage("Nama item wajib diisi.");
       return;
     }
 
     if (draft.defaultPriceText.trim() && payload.defaultPrice === null) {
-      setMessage("Harga menu harus berupa angka lebih dari 0.");
+      setMessage("Harga item harus berupa angka lebih dari 0.");
       return;
     }
 
@@ -182,7 +179,7 @@ export function AppMenuPage() {
       const response = await updateMenuItem(menuItemId, payload);
       const updated = response?.data;
       if (!updated) {
-        throw new Error("Menu gagal diperbarui.");
+        throw new Error("Item katalog gagal diperbarui.");
       }
 
       setMenuItems((previous) => previous.map((item) => (item.id === menuItemId ? updated : item)));
@@ -190,9 +187,9 @@ export function AppMenuPage() {
         ...previous,
         [menuItemId]: toDraft(updated),
       }));
-      setMessage("Menu berhasil diperbarui.");
+      setMessage("Item katalog berhasil diperbarui.");
     } catch (error) {
-      setMessage(normalizeError(error, "Gagal menyimpan menu."));
+      setMessage(normalizeError(error, "Gagal menyimpan item katalog."));
     } finally {
       setSavingItemId("");
     }
@@ -210,10 +207,10 @@ export function AppMenuPage() {
         delete next[menuItemId];
         return next;
       });
-      setMessage("Menu berhasil dihapus dari daftar aktif.");
+      setMessage("Item katalog berhasil dihapus dari daftar aktif.");
       return true;
     } catch (error) {
-      setMessage(normalizeError(error, "Gagal menghapus menu."));
+      setMessage(normalizeError(error, "Gagal menghapus item katalog."));
       return false;
     } finally {
       setRemovingItemId("");
@@ -223,7 +220,7 @@ export function AppMenuPage() {
   if (isLoading) {
     return (
       <section className="motion-enter-up rounded-lg border border-border bg-card p-6">
-        <p className="su-type-helper text-muted-foreground">Memuat menu...</p>
+        <p className="su-type-helper text-muted-foreground">Memuat katalog...</p>
       </section>
     );
   }
@@ -236,19 +233,19 @@ export function AppMenuPage() {
             <ChefHat aria-hidden className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="su-type-section-title text-foreground">Menu usaha</h2>
-            <p className="su-type-helper text-muted-foreground">Daftar ini membantu chat mengenali jualan kamu.</p>
+            <h2 className="su-type-section-title text-foreground">Katalog usaha</h2>
+            <p className="su-type-helper text-muted-foreground">Daftar ini membantu chat mengenali produk atau jasa kamu.</p>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(12rem,1.2fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(12rem,1fr)_auto] lg:items-end">
+        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(12rem,1.4fr)_minmax(10rem,1fr)_minmax(12rem,1fr)_auto] lg:items-end">
           <label className="grid gap-2">
-            <span className="su-type-ui text-foreground">Nama menu</span>
+            <span className="su-type-ui text-foreground">Nama item</span>
             <input
               type="text"
               value={newDraft.name}
               onChange={(event) => setNewDraftValue("name", event.target.value)}
-              placeholder="Ayam Geprek"
+              placeholder="Contoh: Ayam Geprek / Jasa Cuci"
               className="su-type-field h-11 rounded-md border border-border bg-background px-3 text-foreground outline-none focus:ring-2 focus:ring-ring/20"
             />
           </label>
@@ -261,17 +258,6 @@ export function AppMenuPage() {
               value={newDraft.defaultPriceText}
               onChange={(event) => setNewDraftValue("defaultPriceText", event.target.value)}
               placeholder="15000"
-              className="su-type-field h-11 rounded-md border border-border bg-background px-3 text-foreground outline-none focus:ring-2 focus:ring-ring/20"
-            />
-          </label>
-
-          <label className="grid gap-2">
-            <span className="su-type-ui text-foreground">Kategori</span>
-            <input
-              type="text"
-              value={newDraft.category}
-              onChange={(event) => setNewDraftValue("category", event.target.value)}
-              placeholder="Makanan"
               className="su-type-field h-11 rounded-md border border-border bg-background px-3 text-foreground outline-none focus:ring-2 focus:ring-ring/20"
             />
           </label>
@@ -299,16 +285,16 @@ export function AppMenuPage() {
       <section className="motion-enter-up rounded-lg border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="su-type-section-title text-foreground">Daftar menu aktif</h2>
-            <p className="su-type-helper text-muted-foreground">Menu aktif akan masuk ke konteks parser.</p>
+            <h2 className="su-type-section-title text-foreground">Daftar katalog aktif</h2>
+            <p className="su-type-helper text-muted-foreground">Item aktif akan masuk ke konteks parser.</p>
           </div>
-          <span className="su-type-meta rounded-full bg-secondary px-3 py-1 text-primary">{menuItems.length} menu</span>
+          <span className="su-type-meta rounded-full bg-secondary px-3 py-1 text-primary">{menuItems.length} item</span>
         </div>
 
         <div className="mt-5 grid gap-4">
           {menuItems.length === 0 ? (
             <div className="rounded-md border border-dashed border-border bg-background p-5">
-              <p className="su-type-helper text-muted-foreground">Belum ada menu aktif.</p>
+              <p className="su-type-helper text-muted-foreground">Belum ada item katalog aktif.</p>
             </div>
           ) : null}
 
@@ -317,9 +303,9 @@ export function AppMenuPage() {
 
             return (
               <article key={item.id} className="rounded-md border border-border bg-background p-4">
-                <div className="grid gap-3 lg:grid-cols-[minmax(12rem,1.2fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(12rem,1fr)_auto_auto] lg:items-end">
+                <div className="grid gap-3 lg:grid-cols-[minmax(12rem,1.4fr)_minmax(10rem,1fr)_minmax(12rem,1fr)_auto_auto] lg:items-end">
                   <label className="grid gap-2">
-                    <span className="su-type-ui text-foreground">Nama menu</span>
+                    <span className="su-type-ui text-foreground">Nama item</span>
                     <input
                       type="text"
                       value={draft.name}
@@ -335,16 +321,6 @@ export function AppMenuPage() {
                       inputMode="numeric"
                       value={draft.defaultPriceText}
                       onChange={(event) => setDraftValue(item.id, "defaultPriceText", event.target.value)}
-                      className="su-type-field h-11 rounded-md border border-border bg-card px-3 text-foreground outline-none focus:ring-2 focus:ring-ring/20"
-                    />
-                  </label>
-
-                  <label className="grid gap-2">
-                    <span className="su-type-ui text-foreground">Kategori</span>
-                    <input
-                      type="text"
-                      value={draft.category}
-                      onChange={(event) => setDraftValue(item.id, "category", event.target.value)}
                       className="su-type-field h-11 rounded-md border border-border bg-card px-3 text-foreground outline-none focus:ring-2 focus:ring-ring/20"
                     />
                   </label>
@@ -383,7 +359,7 @@ export function AppMenuPage() {
                 </div>
 
                 <p className="su-type-helper mt-3 text-muted-foreground">
-                  Harga konteks:{" "}
+                Harga konteks:{" "}
                   <span className="font-semibold text-foreground">
                     {item.defaultPrice ? currencyFormatter.format(item.defaultPrice) : "Belum diisi"}
                   </span>
@@ -403,9 +379,9 @@ export function AppMenuPage() {
       {pendingDeleteItemId ? (
         <div className="motion-enter-up fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4">
           <section className="motion-enter-scale w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-xl">
-            <h2 className="su-type-ui text-foreground">Hapus menu?</h2>
+            <h2 className="su-type-ui text-foreground">Hapus item katalog?</h2>
             <p className="su-type-helper mt-2 text-muted-foreground">
-              Menu ini akan hilang dari daftar aktif dan tidak dipakai sebagai konteks chat.
+              Item ini akan hilang dari daftar aktif dan tidak dipakai sebagai konteks chat.
             </p>
 
             <div className="mt-5 flex justify-end gap-2">

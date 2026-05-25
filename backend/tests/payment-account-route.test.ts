@@ -44,6 +44,7 @@ vi.mock("../src/features/payment-accounts/payment-account.service.js", () => {
     ensureDefaultPaymentAccountsForBusinessId: vi.fn(),
     createPaymentAccountForBusiness: vi.fn(),
     deactivatePaymentAccountForBusiness: vi.fn(),
+    setDefaultPaymentAccountForBusiness: vi.fn(),
     updatePaymentAccountNameForBusiness: vi.fn(),
     DefaultPaymentAccountRemovalError,
     PaymentAccountAlreadyExistsError,
@@ -62,6 +63,7 @@ import {
   listPaymentAccountsByBusinessId,
   PaymentAccountAlreadyExistsError,
   PaymentAccountNotFoundError,
+  setDefaultPaymentAccountForBusiness,
   updatePaymentAccountNameForBusiness,
 } from "../src/features/payment-accounts/payment-account.service.js";
 
@@ -297,5 +299,50 @@ describe("payment account routes", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.message).toBe("Default payment account cannot be removed.");
+  });
+
+  it("sets a payment account as default", async () => {
+    vi.mocked(findBusinessByOwnerId).mockResolvedValue({
+      id: "biz_123",
+      ownerId: "user_123",
+      name: "Warung Test",
+      currency: "IDR",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+
+    vi.mocked(setDefaultPaymentAccountForBusiness).mockResolvedValue({
+      id: "acct_bank",
+      businessId: "biz_123",
+      name: "Bank BCA",
+      type: "non_cash",
+      currentBalance: "100000",
+      isDefault: true,
+      status: "active",
+    } as never);
+
+    const response = await request(app).patch("/api/v1/payment-accounts/acct_bank/default").send({});
+
+    expect(response.status).toBe(200);
+    expect(setDefaultPaymentAccountForBusiness).toHaveBeenCalledWith("biz_123", "acct_bank");
+    expect(response.body.data.isDefault).toBe(true);
+  });
+
+  it("returns 404 when setting default on missing payment account", async () => {
+    vi.mocked(findBusinessByOwnerId).mockResolvedValue({
+      id: "biz_123",
+      ownerId: "user_123",
+      name: "Warung Test",
+      currency: "IDR",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+
+    vi.mocked(setDefaultPaymentAccountForBusiness).mockRejectedValue(new PaymentAccountNotFoundError());
+
+    const response = await request(app).patch("/api/v1/payment-accounts/acct_missing/default").send({});
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.message).toBe("Payment account not found.");
   });
 });

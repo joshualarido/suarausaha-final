@@ -244,3 +244,56 @@ export async function deactivatePaymentAccountForBusiness(
     return updated;
   });
 }
+
+export async function setDefaultPaymentAccountForBusiness(
+  businessId: string,
+  paymentAccountId: string,
+): Promise<PaymentAccount> {
+  return runFinancialWrite(async (tx) => {
+    const account = await tx
+      .selectFrom("payment_accounts")
+      .selectAll()
+      .where("id", "=", paymentAccountId)
+      .where("businessId", "=", businessId)
+      .where("status", "=", "active")
+      .executeTakeFirst();
+
+    if (!account) {
+      throw new PaymentAccountNotFoundError();
+    }
+
+    if (account.isDefault) {
+      return account;
+    }
+
+    const now = new Date();
+
+    await tx
+      .updateTable("payment_accounts")
+      .set({
+        isDefault: false,
+        updatedAt: now,
+      })
+      .where("businessId", "=", businessId)
+      .where("status", "=", "active")
+      .executeTakeFirst();
+
+    const updated = await tx
+      .updateTable("payment_accounts")
+      .set({
+        isDefault: true,
+        updatedAt: now,
+      })
+      .where("id", "=", paymentAccountId)
+      .where("businessId", "=", businessId)
+      .where("status", "=", "active")
+      .returningAll()
+      .executeTakeFirst();
+
+    if (!updated) {
+      throw new PaymentAccountNotFoundError();
+    }
+
+    return updated;
+  });
+}

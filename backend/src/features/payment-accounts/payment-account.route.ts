@@ -10,6 +10,7 @@ import {
   listPaymentAccountsByBusinessId,
   PaymentAccountAlreadyExistsError,
   PaymentAccountNotFoundError,
+  setDefaultPaymentAccountForBusiness,
   updatePaymentAccountNameForBusiness,
 } from "./payment-account.service.js";
 
@@ -219,6 +220,48 @@ paymentAccountRouter.delete("/payment-accounts/:paymentAccountId", requireAuth, 
         error: {
           code: "VALIDATION_ERROR",
           message: "Default payment account cannot be removed.",
+        },
+      });
+      return;
+    }
+
+    throw error;
+  }
+});
+
+paymentAccountRouter.patch("/payment-accounts/:paymentAccountId/default", requireAuth, async (req, res) => {
+  const business = await findBusinessByOwnerId(req.user!.id);
+
+  if (!business) {
+    res.status(404).json({
+      success: false,
+      error: {
+        code: "NOT_FOUND",
+        message: "Business profile not found.",
+      },
+    });
+    return;
+  }
+
+  try {
+    const updated = await setDefaultPaymentAccountForBusiness(business.id, getParam(req.params.paymentAccountId));
+    res.json({
+      success: true,
+      data: {
+        id: updated.id,
+        name: updated.name,
+        currentBalance: Number(updated.currentBalance),
+        isDefault: updated.isDefault,
+        status: updated.status,
+      },
+    });
+  } catch (error) {
+    if (error instanceof PaymentAccountNotFoundError) {
+      res.status(404).json({
+        success: false,
+        error: {
+          code: "NOT_FOUND",
+          message: "Payment account not found.",
         },
       });
       return;

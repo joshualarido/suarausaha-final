@@ -80,6 +80,87 @@ export interface TransactionRow {
   createdBy: string;
 }
 
+export interface TransactionEffectRow {
+  id: string;
+  transactionId: string;
+  businessId: string;
+  targetType: string;
+  targetId: string;
+  effectType: string;
+  direction: "increase" | "decrease";
+  amount: string;
+  beforeAmount: string;
+  afterAmount: string;
+  createdAt: Date;
+}
+
+export interface InventorySummaryRow {
+  id: string;
+  businessId: string;
+  name: string;
+  estimatedValue: string;
+  sourceOpeningBalanceId: string | null;
+  sourceTransactionId: string | null;
+  lastUpdatedAt: Date;
+  status: "active" | "inactive";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AssetSummaryRow {
+  id: string;
+  businessId: string;
+  name: string;
+  value: string;
+  recordedDate: string;
+  sourceOpeningBalanceId: string | null;
+  sourceTransactionId: string | null;
+  status: "active" | "inactive";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface LiabilityRow {
+  id: string;
+  businessId: string;
+  lenderName: string;
+  description: string | null;
+  originalAmount: string;
+  outstandingAmount: string;
+  createdDate: string;
+  status: "open" | "partial" | "paid";
+  sourceOpeningBalanceId: string | null;
+  sourceTransactionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ReceivableRow {
+  id: string;
+  businessId: string;
+  customerName: string;
+  description: string | null;
+  originalAmount: string;
+  outstandingAmount: string;
+  createdDate: string;
+  status: "open" | "partial" | "paid";
+  sourceOpeningBalanceId: string | null;
+  sourceTransactionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TransactionCorrectionRow {
+  id: string;
+  businessId: string;
+  originalTransactionId: string;
+  reversalTransactionId: string;
+  reason: string | null;
+  status: "applied" | "failed";
+  createdAt: Date;
+  createdBy: string;
+}
+
 export interface ParsedCommandRow {
   id: string;
   businessId: string;
@@ -152,6 +233,12 @@ export interface DatabaseSchema {
   chat_sessions: ChatSessionRow;
   chat_messages: ChatMessageRow;
   transactions: TransactionRow;
+  transaction_effects: TransactionEffectRow;
+  inventory_summaries: InventorySummaryRow;
+  asset_summaries: AssetSummaryRow;
+  liabilities: LiabilityRow;
+  receivables: ReceivableRow;
+  transaction_corrections: TransactionCorrectionRow;
 }
 
 const pool = new Pool({
@@ -402,6 +489,105 @@ export async function ensureDatabaseSchema(): Promise<void> {
   await sql`
     ALTER TABLE "transactions"
     ADD COLUMN IF NOT EXISTS "parsedCommandId" text REFERENCES "parsed_commands"("id") ON DELETE SET NULL;
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "transaction_effects" (
+      "id" text PRIMARY KEY,
+      "transactionId" text NOT NULL REFERENCES "transactions"("id") ON DELETE CASCADE,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "targetType" text NOT NULL,
+      "targetId" text NOT NULL,
+      "effectType" text NOT NULL,
+      "direction" text NOT NULL CHECK ("direction" IN ('increase', 'decrease')),
+      "amount" bigint NOT NULL CHECK ("amount" > 0),
+      "beforeAmount" bigint NOT NULL,
+      "afterAmount" bigint NOT NULL,
+      "createdAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS "transaction_effects_transaction_idx"
+    ON "transaction_effects" ("transactionId");
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "inventory_summaries" (
+      "id" text PRIMARY KEY,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "name" text NOT NULL,
+      "estimatedValue" bigint NOT NULL DEFAULT 0,
+      "sourceOpeningBalanceId" text REFERENCES "opening_balances"("id") ON DELETE SET NULL,
+      "sourceTransactionId" text REFERENCES "transactions"("id") ON DELETE SET NULL,
+      "lastUpdatedAt" timestamptz NOT NULL DEFAULT now(),
+      "status" text NOT NULL DEFAULT 'active' CHECK ("status" IN ('active', 'inactive')),
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "asset_summaries" (
+      "id" text PRIMARY KEY,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "name" text NOT NULL,
+      "value" bigint NOT NULL CHECK ("value" > 0),
+      "recordedDate" date NOT NULL,
+      "sourceOpeningBalanceId" text REFERENCES "opening_balances"("id") ON DELETE SET NULL,
+      "sourceTransactionId" text REFERENCES "transactions"("id") ON DELETE SET NULL,
+      "status" text NOT NULL DEFAULT 'active' CHECK ("status" IN ('active', 'inactive')),
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "liabilities" (
+      "id" text PRIMARY KEY,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "lenderName" text NOT NULL,
+      "description" text,
+      "originalAmount" bigint NOT NULL CHECK ("originalAmount" > 0),
+      "outstandingAmount" bigint NOT NULL CHECK ("outstandingAmount" >= 0),
+      "createdDate" date NOT NULL,
+      "status" text NOT NULL DEFAULT 'open' CHECK ("status" IN ('open', 'partial', 'paid')),
+      "sourceOpeningBalanceId" text REFERENCES "opening_balances"("id") ON DELETE SET NULL,
+      "sourceTransactionId" text REFERENCES "transactions"("id") ON DELETE SET NULL,
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "receivables" (
+      "id" text PRIMARY KEY,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "customerName" text NOT NULL,
+      "description" text,
+      "originalAmount" bigint NOT NULL CHECK ("originalAmount" > 0),
+      "outstandingAmount" bigint NOT NULL CHECK ("outstandingAmount" >= 0),
+      "createdDate" date NOT NULL,
+      "status" text NOT NULL DEFAULT 'open' CHECK ("status" IN ('open', 'partial', 'paid')),
+      "sourceOpeningBalanceId" text REFERENCES "opening_balances"("id") ON DELETE SET NULL,
+      "sourceTransactionId" text REFERENCES "transactions"("id") ON DELETE SET NULL,
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now()
+    );
+  `.execute(db);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "transaction_corrections" (
+      "id" text PRIMARY KEY,
+      "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+      "originalTransactionId" text NOT NULL REFERENCES "transactions"("id") ON DELETE RESTRICT,
+      "reversalTransactionId" text NOT NULL REFERENCES "transactions"("id") ON DELETE RESTRICT,
+      "reason" text,
+      "status" text NOT NULL DEFAULT 'applied' CHECK ("status" IN ('applied', 'failed')),
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "createdBy" text NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT,
+      UNIQUE ("originalTransactionId")
+    );
   `.execute(db);
 
     schemaEnsured = true;

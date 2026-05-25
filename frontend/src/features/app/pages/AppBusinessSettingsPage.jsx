@@ -7,6 +7,7 @@ import {
   getBusinessProfile,
   getPaymentAccounts,
   removePaymentAccount,
+  setDefaultPaymentAccount,
   updateBusinessProfile,
   updatePaymentAccountName,
 } from "@/lib/api-client";
@@ -28,6 +29,7 @@ export function AppBusinessSettingsPage() {
   const [isSavingBusinessName, setIsSavingBusinessName] = useState(false);
   const [savingAccountId, setSavingAccountId] = useState("");
   const [isAddingAccount, setIsAddingAccount] = useState(false);
+  const [settingDefaultAccountId, setSettingDefaultAccountId] = useState("");
   const [removingAccountId, setRemovingAccountId] = useState("");
   const [pendingDeleteAccountId, setPendingDeleteAccountId] = useState("");
   const [pageError, setPageError] = useState("");
@@ -199,6 +201,33 @@ export function AppBusinessSettingsPage() {
     }
   }
 
+  async function handleSetDefaultPaymentAccount(accountId) {
+    setSettingDefaultAccountId(accountId);
+    setAccountsMessage("");
+
+    try {
+      const payload = await setDefaultPaymentAccount(accountId);
+      const updated = payload?.data;
+
+      setAccounts((previous) =>
+        previous.map((account) => ({
+          ...account,
+          isDefault: account.id === accountId,
+        })),
+      );
+
+      if (updated?.name) {
+        setAccountsMessage(`Akun default diubah ke ${updated.name}.`);
+      } else {
+        setAccountsMessage("Akun default berhasil diperbarui.");
+      }
+    } catch (error) {
+      setAccountsMessage(normalizeError(error, "Gagal memperbarui akun default."));
+    } finally {
+      setSettingDefaultAccountId("");
+    }
+  }
+
   if (isLoading) {
     return (
       <section className="motion-enter-up rounded-lg border border-border bg-card p-6">
@@ -281,7 +310,20 @@ export function AppBusinessSettingsPage() {
 
         <div className="mt-5 grid gap-4">
           {accounts.map((account) => (
-            <article key={account.id} className="rounded-md border border-border bg-background p-4">
+            <article
+              key={account.id}
+              className={`rounded-md border p-4 ${
+                account.isDefault ? "border-primary bg-primary/5" : "border-border bg-background"
+              }`}
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="su-type-helper text-muted-foreground">Akun pembayaran</p>
+                {account.isDefault ? (
+                  <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                    Default
+                  </span>
+                ) : null}
+              </div>
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
                 <label className="grid gap-2">
                   <span className="su-type-ui text-foreground">Nama akun</span>
@@ -301,7 +343,11 @@ export function AppBusinessSettingsPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={savingAccountId === account.id || removingAccountId === account.id}
+                  disabled={
+                    savingAccountId === account.id ||
+                    removingAccountId === account.id ||
+                    settingDefaultAccountId === account.id
+                  }
                   onClick={() => handleSavePaymentAccountName(account.id)}
                   className="h-11 gap-2 px-4"
                 >
@@ -309,20 +355,40 @@ export function AppBusinessSettingsPage() {
                   {savingAccountId === account.id ? "Menyimpan..." : "Simpan"}
                 </Button>
 
-                {!account.isDefault ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={savingAccountId === account.id || removingAccountId === account.id}
-                    onClick={() => setPendingDeleteAccountId(account.id)}
-                    className="h-11 gap-2 px-4 text-danger hover:text-danger"
-                  >
-                    <Trash2 aria-hidden className="h-4 w-4" />
-                    {removingAccountId === account.id ? "Menghapus..." : "Hapus"}
-                  </Button>
-                ) : (
-                  <div className="h-11" aria-hidden />
-                )}
+                <div className="flex gap-2">
+                  {!account.isDefault ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={
+                        savingAccountId === account.id ||
+                        removingAccountId === account.id ||
+                        settingDefaultAccountId === account.id
+                      }
+                      onClick={() => handleSetDefaultPaymentAccount(account.id)}
+                      className="h-11 px-4"
+                    >
+                      {settingDefaultAccountId === account.id ? "Menyimpan..." : "Jadikan default"}
+                    </Button>
+                  ) : null}
+
+                  {!account.isDefault ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={
+                        savingAccountId === account.id ||
+                        removingAccountId === account.id ||
+                        settingDefaultAccountId === account.id
+                      }
+                      onClick={() => setPendingDeleteAccountId(account.id)}
+                      className="h-11 gap-2 px-4 text-danger hover:text-danger"
+                    >
+                      <Trash2 aria-hidden className="h-4 w-4" />
+                      {removingAccountId === account.id ? "Menghapus..." : "Hapus"}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
 
               <p className="su-type-helper mt-3 text-muted-foreground">

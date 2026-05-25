@@ -6,6 +6,7 @@ import {
   getAssetSummaryByBusinessId,
   getInventorySummaryByBusinessId,
   getLiabilitySummaryByBusinessId,
+  getReceivableSummaryByBusinessId,
   listTransactionHistoryByBusinessId,
   TRANSACTION_TYPES,
 } from "./transaction.service.js";
@@ -99,6 +100,17 @@ transactionRouter.get("/liabilities", requireAuth, async (req, res) => {
   if (!business) return;
 
   const data = await getLiabilitySummaryByBusinessId(business.id);
+  res.json({
+    success: true,
+    data,
+  });
+});
+
+transactionRouter.get("/receivables", requireAuth, async (req, res) => {
+  const business = await resolveBusinessOrRespond(req.user!.id, res);
+  if (!business) return;
+
+  const data = await getReceivableSummaryByBusinessId(business.id);
   res.json({
     success: true,
     data,

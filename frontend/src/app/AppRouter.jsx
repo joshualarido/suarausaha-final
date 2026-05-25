@@ -9,10 +9,10 @@ import {
 import { DashboardLayout } from "@/features/app/components/DashboardLayout";
 import { AppAssetsPage } from "@/features/app/pages/AppAssetsPage";
 import { AppBusinessSettingsPage } from "@/features/app/pages/AppBusinessSettingsPage";
+import { AppCatalogPage } from "@/features/app/pages/AppCatalogPage";
 import { AppChatPage } from "@/features/app/pages/AppChatPage";
 import { AppHistoryPage } from "@/features/app/pages/AppHistoryPage";
 import { AppLiabilitiesPage } from "@/features/app/pages/AppLiabilitiesPage";
-import { AppMenuPage } from "@/features/app/pages/AppMenuPage";
 import { AppOverviewPage } from "@/features/app/pages/AppOverviewPage";
 import { AppReportsPage } from "@/features/app/pages/AppReportsPage";
 import { AppStockPage } from "@/features/app/pages/AppStockPage";
@@ -49,7 +49,7 @@ export function AppRouter() {
             <Route index element={<AppChatPage />} />
             <Route path="overview" element={<AppOverviewPage />} />
             <Route path="reports" element={<AppReportsPage />} />
-            <Route path="menu" element={<AppMenuPage />} />
+            <Route path="catalog" element={<AppCatalogPage />} />
             <Route path="stock" element={<AppStockPage />} />
             <Route path="assets" element={<AppAssetsPage />} />
             <Route path="liabilities" element={<AppLiabilitiesPage />} />
@@ -57,6 +57,7 @@ export function AppRouter() {
             <Route path="settings/user" element={<AppUserSettingsPage />} />
             <Route path="history" element={<AppHistoryPage />} />
             <Route path="transactions" element={<AppTransactionsPage />} />
+            <Route path="menu" element={<Navigate to="/app/catalog" replace />} />
             <Route path="neraca" element={<Navigate to="/app/reports" replace />} />
             <Route path="business" element={<Navigate to="/app/settings/business" replace />} />
             <Route path="settings" element={<Navigate to="/app/settings/user" replace />} />

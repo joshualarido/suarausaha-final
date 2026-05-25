@@ -37,7 +37,7 @@ const navigationGroups = [
     items: [
       { label: "Laporan", href: "/app/reports", icon: FileText },
       { label: "Transaksi", href: "/app/transactions", icon: Banknote },
-      { label: "Menu", href: "/app/menu", icon: ListChecks },
+      { label: "Katalog", href: "/app/catalog", icon: ListChecks },
       { label: "Stok", href: "/app/stock", icon: Boxes },
       { label: "Aset", href: "/app/assets", icon: Landmark },
       { label: "Liabilitas", href: "/app/liabilities", icon: HandCoins },
@@ -92,7 +92,8 @@ export function DashboardLayout() {
       app: "Obrolan",
       overview: "Overview",
       reports: "Laporan",
-      menu: "Menu",
+      menu: "Catalog",
+      catalog: "Catalog",
       stock: "Stok",
       assets: "Aset",
       liabilities: "Liabilitas",
