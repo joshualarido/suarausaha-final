@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createDeterministicIntentParser } from "../src/features/parser/deterministic-parser.service.js";
 
 describe("deterministic intent parser", () => {
-  it("returns structured sales income without writing financial data", async () => {
+  it("asks user to create menu data first when sales menu catalog is empty", async () => {
     const parser = createDeterministicIntentParser();
 
     const result = await parser.parse({
@@ -17,21 +17,12 @@ describe("deterministic intent parser", () => {
       menuItems: [],
     });
 
-    expect(result.status).toBe("parsed");
-    expect(result.proposedAction).toMatchObject({
-      intent: "sales_income",
-      amount: 500_000,
-      date: "2026-05-23",
-      paymentAccountId: "acct_cash",
-      paymentAccountName: "Kas",
-    });
-    expect(result.proposedAction?.expectedEffects).toEqual([
-      "Kas bertambah Rp500.000",
-      "Pendapatan bertambah Rp500.000",
-    ]);
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("menu_item_dependency");
+    expect(result.question).toContain("Buat menu dulu di Katalog");
   });
 
-  it("asks for clarification instead of inventing an amount", async () => {
+  it("asks for clarification when amount is missing after a valid menu match", async () => {
     const parser = createDeterministicIntentParser();
 
     const result = await parser.parse({
@@ -42,7 +33,15 @@ describe("deterministic intent parser", () => {
       defaultPaymentAccountId: "acct_cash",
       defaultPaymentAccountName: "Kas",
       paymentAccounts: [{ id: "acct_cash", name: "Kas", type: "cash", isDefault: true }],
-      menuItems: [],
+      menuItems: [
+        {
+          id: "menu_ayam_geprek",
+          name: "Ayam Geprek",
+          aliases: ["geprek"],
+          defaultPrice: 15_000,
+          category: "Makanan",
+        },
+      ],
     });
 
     expect(result.status).toBe("needs_clarification");

@@ -31,7 +31,12 @@ vi.mock("../src/features/transactions/transaction.service.js", () => {
 
 import { runFinancialWrite } from "../src/lib/financial-write.js";
 import {
+  FinancialTargetNotFoundError,
   createBaseTransactionInTransaction,
+  FinancialTargetOverpaymentError,
+  InvalidPaymentAccountOwnershipError,
+  MissingAffectedObjectError,
+  MissingPaymentAccountForTransactionError,
   InsufficientPaymentAccountBalanceError,
 } from "../src/features/transactions/transaction.service.js";
 import {
@@ -244,6 +249,103 @@ describe("confirmation service", () => {
     ).rejects.toMatchObject({
       code: "INSUFFICIENT_BALANCE",
       message: "Saldo kas tidak cukup.",
+    });
+  });
+
+  it("maps missing payment account to a dedicated confirmation error code", async () => {
+    const { tx } = buildTx();
+    vi.mocked(runFinancialWrite).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(createBaseTransactionInTransaction).mockRejectedValue(
+      new MissingPaymentAccountForTransactionError("Payment account is required for this transaction type."),
+    );
+
+    await expect(
+      confirmConfirmationRequest({
+        businessId: "biz_123",
+        userId: "user_123",
+        confirmationRequestId: "confirm_123",
+      }),
+    ).rejects.toMatchObject({
+      code: "PAYMENT_ACCOUNT_REQUIRED",
+      message: "Payment account is required for this transaction type.",
+    });
+  });
+
+  it("maps invalid payment account ownership to a dedicated confirmation error code", async () => {
+    const { tx } = buildTx();
+    vi.mocked(runFinancialWrite).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(createBaseTransactionInTransaction).mockRejectedValue(
+      new InvalidPaymentAccountOwnershipError("Payment account does not belong to this business."),
+    );
+
+    await expect(
+      confirmConfirmationRequest({
+        businessId: "biz_123",
+        userId: "user_123",
+        confirmationRequestId: "confirm_123",
+      }),
+    ).rejects.toMatchObject({
+      code: "PAYMENT_ACCOUNT_INVALID",
+      message: "Payment account does not belong to this business.",
+    });
+  });
+
+  it("maps missing target to a dedicated confirmation error code", async () => {
+    const { tx } = buildTx();
+    vi.mocked(runFinancialWrite).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(createBaseTransactionInTransaction).mockRejectedValue(
+      new MissingAffectedObjectError("Utang yang mau dibayar harus disebutkan."),
+    );
+
+    await expect(
+      confirmConfirmationRequest({
+        businessId: "biz_123",
+        userId: "user_123",
+        confirmationRequestId: "confirm_123",
+      }),
+    ).rejects.toMatchObject({
+      code: "TARGET_REQUIRED",
+      message: "Utang yang mau dibayar harus disebutkan.",
+    });
+  });
+
+  it("maps missing financial target to a dedicated confirmation error code", async () => {
+    const { tx } = buildTx();
+    vi.mocked(runFinancialWrite).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(createBaseTransactionInTransaction).mockRejectedValue(
+      new FinancialTargetNotFoundError("Utang yang mau dibayar tidak ditemukan. Sebutkan nama pemberi utang yang sesuai."),
+    );
+
+    await expect(
+      confirmConfirmationRequest({
+        businessId: "biz_123",
+        userId: "user_123",
+        confirmationRequestId: "confirm_123",
+      }),
+    ).rejects.toMatchObject({
+      code: "TARGET_NOT_FOUND",
+      message: "Utang yang mau dibayar tidak ditemukan. Sebutkan nama pemberi utang yang sesuai.",
+    });
+  });
+
+  it("maps overpayment to a dedicated confirmation error code", async () => {
+    const { tx } = buildTx();
+    vi.mocked(runFinancialWrite).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(createBaseTransactionInTransaction).mockRejectedValue(
+      new FinancialTargetOverpaymentError(
+        "Jumlah pembayaran melebihi sisa utang. Ubah jumlah pembayaran agar tidak lebih dari sisa utang.",
+      ),
+    );
+
+    await expect(
+      confirmConfirmationRequest({
+        businessId: "biz_123",
+        userId: "user_123",
+        confirmationRequestId: "confirm_123",
+      }),
+    ).rejects.toMatchObject({
+      code: "PAYMENT_AMOUNT_INVALID",
+      message: "Jumlah pembayaran melebihi sisa utang. Ubah jumlah pembayaran agar tidak lebih dari sisa utang.",
     });
   });
 

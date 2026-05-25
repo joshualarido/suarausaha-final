@@ -88,6 +88,8 @@ function buildPrompt(input: ParseIntentInput): string {
       name: input.defaultPaymentAccountName,
     },
     menuItems: input.menuItems,
+    openLiabilities: input.openLiabilities ?? [],
+    openReceivables: input.openReceivables ?? [],
     message: input.message,
     clarification: input.clarification ?? null,
   };

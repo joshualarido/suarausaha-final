@@ -105,6 +105,12 @@ export class UnsafeReversalError extends Error {
   }
 }
 
+export class NoReversibleTransactionError extends Error {
+  constructor(message = "Belum ada transaksi yang bisa dibalik.") {
+    super(message);
+  }
+}
+
 function validateBaseTransactionInput(input: CreateBaseTransactionInput): void {
   if (!Number.isInteger(input.amount) || input.amount <= 0) {
     throw new InvalidTransactionAmountError();
@@ -523,7 +529,9 @@ async function applyLiabilityPaymentEffect(
   const beforeAmount = BigInt(input.liability.outstandingAmount);
   const originalAmount = BigInt(input.liability.originalAmount);
   if (input.amount > beforeAmount) {
-    throw new FinancialTargetOverpaymentError("Jumlah pembayaran melebihi sisa utang.");
+    throw new FinancialTargetOverpaymentError(
+      "Jumlah pembayaran melebihi sisa utang. Ubah jumlah pembayaran agar tidak lebih dari sisa utang.",
+    );
   }
 
   const afterAmount = beforeAmount - input.amount;
@@ -558,7 +566,9 @@ async function applyReceivablePaymentEffect(
   const beforeAmount = BigInt(input.receivable.outstandingAmount);
   const originalAmount = BigInt(input.receivable.originalAmount);
   if (input.amount > beforeAmount) {
-    throw new FinancialTargetOverpaymentError("Jumlah pembayaran melebihi sisa piutang.");
+    throw new FinancialTargetOverpaymentError(
+      "Jumlah pembayaran melebihi sisa piutang. Ubah jumlah pembayaran agar tidak lebih dari sisa piutang.",
+    );
   }
 
   const afterAmount = beforeAmount - input.amount;
@@ -1025,6 +1035,61 @@ export async function createBaseTransaction(input: CreateBaseTransactionInput): 
   return runFinancialWrite(async (tx) => createBaseTransactionInTransaction(tx, input));
 }
 
+export interface ReverseLatestTransactionInput {
+  businessId: string;
+  userId: string;
+  reason?: string;
+  transactionDate?: string;
+}
+
+export interface ReverseLatestTransactionResult {
+  originalTransactionId: string;
+  reversalTransactionId: string;
+}
+
+export async function reverseLatestTransactionForBusinessInTransaction(
+  tx: FinancialWriteTx,
+  input: ReverseLatestTransactionInput,
+): Promise<ReverseLatestTransactionResult> {
+  const latest = await tx
+    .selectFrom("transactions")
+    .select(["id", "amount", "transactionDate", "status", "isReversal", "type"])
+    .where("businessId", "=", input.businessId)
+    .where("status", "=", "confirmed")
+    .where("isReversal", "=", false)
+    .where("type", "!=", "reversal")
+    .orderBy("transactionDate", "desc")
+    .orderBy("createdAt", "desc")
+    .forUpdate()
+    .executeTakeFirst();
+
+  if (!latest) {
+    throw new NoReversibleTransactionError("Belum ada transaksi yang bisa di-undo.");
+  }
+
+  const reversal = await createBaseTransactionInTransaction(tx, {
+    businessId: input.businessId,
+    createdBy: input.userId,
+    type: "reversal",
+    amount: 1,
+    transactionDate: input.transactionDate ?? new Date().toISOString().slice(0, 10),
+    description: input.reason?.trim() || "Undo transaksi terakhir",
+    affectedObject: latest.id,
+    paymentAccountId: null,
+  });
+
+  return {
+    originalTransactionId: latest.id,
+    reversalTransactionId: reversal.id,
+  };
+}
+
+export async function reverseLatestTransactionForBusiness(
+  input: ReverseLatestTransactionInput,
+): Promise<ReverseLatestTransactionResult> {
+  return runFinancialWrite(async (tx) => reverseLatestTransactionForBusinessInTransaction(tx, input));
+}
+
 export interface TransactionHistoryItem {
   id: string;
   type: TransactionType;
@@ -1100,7 +1165,9 @@ export interface ReceivableSummaryItem {
   id: string;
   customerName: string;
   originalAmount: number;
+  paidAmount: number;
   outstandingAmount: number;
+  remainingAmount: number;
   status: "open" | "partial" | "paid";
   createdDate: string;
   sourceTransactionId: string;
@@ -1108,6 +1175,7 @@ export interface ReceivableSummaryItem {
 
 export interface ReceivableSummaryResult {
   totalOriginalAmount: number;
+  totalPaidAmount: number;
   totalOutstandingAmount: number;
   items: ReceivableSummaryItem[];
 }
@@ -1421,7 +1489,9 @@ export async function getReceivableSummaryByBusinessId(businessId: string): Prom
     id: row.id,
     customerName: row.customerName,
     originalAmount: toNumber(row.originalAmount),
+    paidAmount: Math.max(0, toNumber(row.originalAmount) - toNumber(row.outstandingAmount)),
     outstandingAmount: toNumber(row.outstandingAmount),
+    remainingAmount: toNumber(row.outstandingAmount),
     status: row.status,
     createdDate: row.createdDate,
     sourceTransactionId: row.sourceTransactionId ?? "unknown",
@@ -1434,7 +1504,9 @@ export async function getReceivableSummaryByBusinessId(businessId: string): Prom
       id: "receivable-opening-balance",
       customerName: "Saldo awal piutang",
       originalAmount: openingReceivableValue,
+      paidAmount: 0,
       outstandingAmount: openingReceivableValue,
+      remainingAmount: openingReceivableValue,
       status: "open",
       createdDate: openingDate,
       sourceTransactionId: "opening-balance",
@@ -1445,6 +1517,7 @@ export async function getReceivableSummaryByBusinessId(businessId: string): Prom
 
   return {
     totalOriginalAmount: items.reduce((sum, item) => sum + item.originalAmount, 0),
+    totalPaidAmount: items.reduce((sum, item) => sum + item.paidAmount, 0),
     totalOutstandingAmount: items.reduce((sum, item) => sum + item.outstandingAmount, 0),
     items,
   };

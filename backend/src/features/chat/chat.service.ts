@@ -11,6 +11,12 @@ import {
   toConfirmationResponse,
 } from "../confirmations/confirmation.service.js";
 import { appendChatMessage } from "./chat-message.service.js";
+import {
+  InsufficientPaymentAccountBalanceError,
+  NoReversibleTransactionError,
+  reverseLatestTransactionForBusiness,
+  UnsafeReversalError,
+} from "../transactions/transaction.service.js";
 
 export interface ParseChatMessageInput {
   businessId: string;
@@ -55,6 +61,91 @@ function normalizeInput(message: string): string {
 function isCancelCommand(message: string): boolean {
   const normalized = normalizeInput(message).toLowerCase();
   return normalized === "batalkan" || normalized === "batal" || normalized === "cancel";
+}
+
+function isUndoIntentCommand(message: string): boolean {
+  const normalized = normalizeInput(message).toLowerCase();
+  return (
+    /\b(undo|reverse|balik)\b/.test(normalized) ||
+    /\b(batalkan|batalin|batal)\s+transaksi\b/.test(normalized) ||
+    /\bsalah\s+catat\b/.test(normalized)
+  );
+}
+
+async function appendAssistantResultMessage(input: { businessId: string; userId: string; message: string; extra?: Record<string, unknown> }) {
+  await runFinancialWrite(async (tx) => {
+    await appendChatMessage(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      role: "assistant",
+      kind: "system_result",
+      content: {
+        message: input.message,
+        ...(input.extra ?? {}),
+      },
+    });
+  });
+}
+
+async function handleUndoIntent(input: ParseChatMessageInput): Promise<ChatParseResponse> {
+  await runFinancialWrite(async (tx) => {
+    await appendChatMessage(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      role: "user",
+      kind: "text",
+      content: {
+        text: input.message,
+      },
+    });
+  });
+
+  try {
+    const result = await reverseLatestTransactionForBusiness({
+      businessId: input.businessId,
+      userId: input.userId,
+      reason: "Undo dari obrolan",
+      transactionDate: todayIso(),
+    });
+
+    const message = "Oke, transaksi terakhir berhasil di-undo.";
+    await appendAssistantResultMessage({
+      businessId: input.businessId,
+      userId: input.userId,
+      message,
+      extra: {
+        originalTransactionId: result.originalTransactionId,
+        reversalTransactionId: result.reversalTransactionId,
+      },
+    });
+
+    return {
+      status: "cancelled_pending_confirmation",
+      message,
+    };
+  } catch (error) {
+    const knownMessage =
+      error instanceof NoReversibleTransactionError ||
+      error instanceof UnsafeReversalError ||
+      error instanceof InsufficientPaymentAccountBalanceError
+        ? error.message
+        : null;
+
+    if (!knownMessage) {
+      throw error;
+    }
+
+    await appendAssistantResultMessage({
+      businessId: input.businessId,
+      userId: input.userId,
+      message: knownMessage,
+    });
+
+    return {
+      status: "cancelled_pending_confirmation",
+      message: knownMessage,
+    };
+  }
 }
 
 async function getPaymentAccountContext(businessId: string) {
@@ -102,6 +193,38 @@ async function getParserMenuContext(businessId: string) {
   }));
 }
 
+async function getOpenFinancialTargetContext(businessId: string) {
+  const [liabilities, receivables] = await Promise.all([
+    db
+      .selectFrom("liabilities")
+      .select(["id", "lenderName", "description", "outstandingAmount", "status"])
+      .where("businessId", "=", businessId)
+      .where("status", "in", ["open", "partial"])
+      .execute(),
+    db
+      .selectFrom("receivables")
+      .select(["id", "customerName", "description", "outstandingAmount", "status"])
+      .where("businessId", "=", businessId)
+      .where("status", "in", ["open", "partial"])
+      .execute(),
+  ]);
+
+  return {
+    openLiabilities: liabilities.map((item) => ({
+      id: item.id,
+      lenderName: item.lenderName,
+      description: item.description,
+      outstandingAmount: Number(item.outstandingAmount),
+    })),
+    openReceivables: receivables.map((item) => ({
+      id: item.id,
+      customerName: item.customerName,
+      description: item.description,
+      outstandingAmount: Number(item.outstandingAmount),
+    })),
+  };
+}
+
 function parsedCommandValues(input: ParseChatMessageInput, parserResult: ParseIntentResult) {
   const now = new Date();
   const structuredPayload = parserResult.structuredPayload as Record<string, unknown>;
@@ -130,15 +253,17 @@ async function createParserInput(
   input: ParseChatMessageInput,
   clarification?: ParseIntentInput["clarification"],
 ): Promise<ParseIntentInput> {
-  const [accountContext, menuItems] = await Promise.all([
+  const [accountContext, menuItems, targetContext] = await Promise.all([
     getPaymentAccountContext(input.businessId),
     getParserMenuContext(input.businessId),
+    getOpenFinancialTargetContext(input.businessId),
   ]);
 
   return {
     ...input,
     ...accountContext,
     menuItems,
+    ...targetContext,
     today: todayIso(),
     clarification,
   };
@@ -180,6 +305,10 @@ export async function parseChatMessage(input: ParseChatMessageInput): Promise<Ch
         message,
       };
     });
+  }
+
+  if (isUndoIntentCommand(input.message)) {
+    return handleUndoIntent(input);
   }
 
   const parserResult = await parserEngine.parse(await createParserInput(input));

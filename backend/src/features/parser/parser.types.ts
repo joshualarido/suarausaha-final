@@ -41,6 +41,20 @@ export interface ParserPaymentAccountContext {
   isDefault: boolean;
 }
 
+export interface ParserLiabilityContext {
+  id: string;
+  lenderName: string;
+  description: string | null;
+  outstandingAmount: number;
+}
+
+export interface ParserReceivableContext {
+  id: string;
+  customerName: string;
+  description: string | null;
+  outstandingAmount: number;
+}
+
 export interface ParseIntentInput {
   message: string;
   businessId: string;
@@ -50,6 +64,8 @@ export interface ParseIntentInput {
   defaultPaymentAccountName: string | null;
   paymentAccounts: ParserPaymentAccountContext[];
   menuItems: ParserMenuItemContext[];
+  openLiabilities?: ParserLiabilityContext[];
+  openReceivables?: ParserReceivableContext[];
   clarification?: {
     originalMessage: string;
     previousPayload: Record<string, unknown>;

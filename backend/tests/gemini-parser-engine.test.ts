@@ -37,6 +37,22 @@ function baseInput(overrides: Partial<ParseIntentInput> = {}): ParseIntentInput 
         category: "Makanan",
       },
     ],
+    openLiabilities: [
+      {
+        id: "liab_1",
+        lenderName: "Supplier Ayam",
+        description: "Utang stok ayam",
+        outstandingAmount: 200_000,
+      },
+    ],
+    openReceivables: [
+      {
+        id: "recv_1",
+        customerName: "Budi",
+        description: "Budi beli tempo",
+        outstandingAmount: 150_000,
+      },
+    ],
     ...overrides,
   };
 }
@@ -69,6 +85,8 @@ describe("Gemini parser prompt", () => {
         examples: string[];
       }>;
       clarificationRules: string[];
+      openLiabilities: Array<{ id: string }>;
+      openReceivables: Array<{ id: string }>;
     };
 
     expect(prompt.intentCatalog.map((item) => item.intent)).toEqual(expectedIntentOptions);
@@ -83,6 +101,8 @@ describe("Gemini parser prompt", () => {
     expect(prompt.clarificationRules).toContain(
       "If the transaction type is unclear, ask: Transaksi ini paling cocok dicatat sebagai apa?",
     );
+    expect(prompt.openLiabilities.map((item) => item.id)).toEqual(["liab_1"]);
+    expect(prompt.openReceivables.map((item) => item.id)).toEqual(["recv_1"]);
   });
 });
 
@@ -194,6 +214,68 @@ describe("Gemini parser draft validation", () => {
 
     expect(result.status).toBe("needs_clarification");
     expect(result.missingFields).toContain("paymentAccountId");
+  });
+
+  it("asks user to create menu first when sales menu is not in catalog", () => {
+    const result = validateParserDraft(
+      baseInput({
+        menuItems: [
+          {
+            id: "menu_nasi_goreng",
+            name: "Nasi Goreng",
+            aliases: ["nasgor"],
+            defaultPrice: 20_000,
+            category: "Makanan",
+          },
+        ],
+      }),
+      baseDraft({ affectedObject: "Ayam Geprek", description: "Jual ayam geprek tunai" }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("menu_item_dependency");
+    expect(result.question).toContain("belum ada di katalog");
+  });
+
+  it("asks user to create liability first when liability target does not exist", () => {
+    const result = validateParserDraft(
+      baseInput({
+        openLiabilities: [],
+        message: "bayar utang supplier ayam 100000",
+      }),
+      baseDraft({
+        detectedIntent: "liability_payment",
+        amount: 100_000,
+        description: "Bayar utang supplier ayam",
+        affectedObject: "Supplier ayam",
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("liability_dependency");
+    expect(result.question).toContain("Buat data utang dulu");
+  });
+
+  it("asks user to create receivable first when receivable target does not exist", () => {
+    const result = validateParserDraft(
+      baseInput({
+        openReceivables: [],
+        message: "Budi bayar piutang 100000",
+      }),
+      baseDraft({
+        detectedIntent: "receivable_payment",
+        amount: 100_000,
+        description: "Budi bayar piutang",
+        affectedObject: "Budi",
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("receivable_dependency");
+    expect(result.question).toContain("Buat data piutang dulu");
   });
 });
 

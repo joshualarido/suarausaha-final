@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { PaginationControls } from "@/features/app/components/PaginationControls";
 import { ApiClientError, getTransactions } from "@/lib/api-client";
 import { formatDateId } from "@/lib/date-format";
 
@@ -193,19 +193,7 @@ export function AppTransactionsPage() {
         <p className="su-type-helper text-muted-foreground">
           Halaman {page} dari {totalPages} ({total} transaksi)
         </p>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" disabled={page <= 1 || isLoading} onClick={() => setPage((current) => current - 1)}>
-            Sebelumnya
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={page >= totalPages || isLoading}
-            onClick={() => setPage((current) => current + 1)}
-          >
-            Berikutnya
-          </Button>
-        </div>
+        <PaginationControls page={page} totalPages={totalPages} isLoading={isLoading} onPageChange={setPage} />
       </div>
     </section>
   );

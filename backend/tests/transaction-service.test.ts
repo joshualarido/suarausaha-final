@@ -591,7 +591,9 @@ describe("transaction service", () => {
         affectedObject: "Supplier ayam",
         paymentAccountId: "acct_cash",
       }),
-    ).rejects.toBeInstanceOf(FinancialTargetOverpaymentError);
+    ).rejects.toMatchObject({
+      message: "Jumlah pembayaran melebihi sisa utang. Ubah jumlah pembayaran agar tidak lebih dari sisa utang.",
+    });
   });
 
   it("rejects receivable payment above outstanding amount", async () => {
@@ -621,6 +623,8 @@ describe("transaction service", () => {
         affectedObject: "Budi",
         paymentAccountId: "acct_cash",
       }),
-    ).rejects.toBeInstanceOf(FinancialTargetOverpaymentError);
+    ).rejects.toMatchObject({
+      message: "Jumlah pembayaran melebihi sisa piutang. Ubah jumlah pembayaran agar tidak lebih dari sisa piutang.",
+    });
   });
 });

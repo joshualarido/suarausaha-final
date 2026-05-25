@@ -48,6 +48,40 @@ function resolvePaymentAccount(input: ParseIntentInput, draft: GeminiParserDraft
   return defaultAccount;
 }
 
+function findMenuMatches(input: ParseIntentInput, draft: GeminiParserDraft) {
+  const menuItems = input.menuItems;
+  const searchTerms = compactUnique([draft.affectedObject, draft.description, input.message]).map(normalize);
+
+  return menuItems.filter((item) => {
+    const menuTerms = compactUnique([item.name, ...item.aliases]).map(normalize);
+    return searchTerms.some((searchTerm) =>
+      menuTerms.some((menuTerm) => menuTerm.includes(searchTerm) || searchTerm.includes(menuTerm)),
+    );
+  });
+}
+
+function findLiabilityMatches(input: ParseIntentInput, target: string) {
+  const normalizedTarget = normalize(target);
+  const openLiabilities = input.openLiabilities ?? [];
+
+  return openLiabilities.filter(
+    (item) =>
+      normalize(item.lenderName).includes(normalizedTarget) ||
+      normalize(item.description ?? "").includes(normalizedTarget),
+  );
+}
+
+function findReceivableMatches(input: ParseIntentInput, target: string) {
+  const normalizedTarget = normalize(target);
+  const openReceivables = input.openReceivables ?? [];
+
+  return openReceivables.filter(
+    (item) =>
+      normalize(item.customerName).includes(normalizedTarget) ||
+      normalize(item.description ?? "").includes(normalizedTarget),
+  );
+}
+
 function effectsFor(action: Omit<ProposedAction, "expectedEffects" | "warning">): string[] {
   const accountName = action.paymentAccountName ?? "Kas";
   const amount = formatIdr(action.amount);
@@ -153,6 +187,135 @@ export function validateParserDraft(
     missingFields.push("paymentAccountId");
   }
 
+  const normalizedIntent = supportedIntentSchema.safeParse(draft.detectedIntent).success ? draft.detectedIntent : null;
+  let normalizedAffectedObject = draft.affectedObject?.trim() || null;
+
+  if (normalizedIntent === "sales_income") {
+    if (input.menuItems.length === 0) {
+      return clarificationResult({
+        draft,
+        parserModel,
+        missingFields: compactUnique([...missingFields, "menu_item_dependency"]),
+        validationErrors,
+        question: "Menu jualan belum ada. Buat menu dulu di Katalog, lalu catat penjualan lagi.",
+      });
+    }
+
+    const matchedMenus = findMenuMatches(input, draft);
+    if (matchedMenus.length === 0) {
+      const targetLabel = draft.affectedObject?.trim();
+      return clarificationResult({
+        draft,
+        parserModel,
+        missingFields: compactUnique([...missingFields, "menu_item_dependency"]),
+        validationErrors,
+        question: targetLabel
+          ? `Menu ${targetLabel} belum ada di katalog. Buat menu dulu, lalu catat penjualan lagi.`
+          : "Menu yang dijual belum ada di katalog. Buat menu dulu di Katalog, lalu catat penjualan lagi.",
+      });
+    }
+
+    if (matchedMenus.length > 1) {
+      return clarificationResult({
+        draft,
+        parserModel,
+        missingFields: compactUnique([...missingFields, "menu_item"]),
+        validationErrors,
+        question: "Ada beberapa menu yang mirip. Pilih menu yang dimaksud dulu.",
+        options: matchedMenus.map((item) => ({
+          label: item.name,
+          value: item.id,
+        })),
+      });
+    }
+
+    normalizedAffectedObject = matchedMenus[0].name;
+  }
+
+  if (normalizedIntent === "liability_payment") {
+    const target = draft.affectedObject?.trim();
+    const openLiabilities = input.openLiabilities ?? [];
+
+    if (openLiabilities.length === 0) {
+      return clarificationResult({
+        draft,
+        parserModel,
+        missingFields: compactUnique([...missingFields, "liability_dependency"]),
+        validationErrors,
+        question: "Belum ada data utang aktif. Buat data utang dulu, baru catat pembayaran.",
+      });
+    }
+
+    if (!target) {
+      missingFields.push("affectedObject");
+    } else {
+      const matches = findLiabilityMatches(input, target);
+      if (matches.length === 0) {
+        return clarificationResult({
+          draft,
+          parserModel,
+          missingFields: compactUnique([...missingFields, "liability_dependency"]),
+          validationErrors,
+          question: `Utang ${target} belum ada. Buat data utang dulu, baru catat pembayaran.`,
+        });
+      }
+
+      if (matches.length > 1) {
+        return clarificationResult({
+          draft,
+          parserModel,
+          missingFields: compactUnique([...missingFields, "affectedObject"]),
+          validationErrors,
+          question: "Ada lebih dari satu utang yang mirip. Sebutkan nama utangnya lebih spesifik.",
+        });
+      }
+
+      normalizedAffectedObject = matches[0].lenderName;
+    }
+  }
+
+  if (normalizedIntent === "receivable_payment") {
+    const target = draft.affectedObject?.trim();
+    const openReceivables = input.openReceivables ?? [];
+
+    if (openReceivables.length === 0) {
+      return clarificationResult({
+        draft,
+        parserModel,
+        missingFields: compactUnique([...missingFields, "receivable_dependency"]),
+        validationErrors,
+        question: "Belum ada data piutang aktif. Buat data piutang dulu, baru catat pembayarannya.",
+      });
+    }
+
+    if (!target) {
+      missingFields.push("affectedObject");
+    } else {
+      const matches = findReceivableMatches(input, target);
+      if (matches.length === 0) {
+        return clarificationResult({
+          draft,
+          parserModel,
+          missingFields: compactUnique([...missingFields, "receivable_dependency"]),
+          validationErrors,
+          question: `Piutang ${target} belum ada. Buat data piutang dulu, baru catat pembayarannya.`,
+        });
+      }
+
+      if (matches.length > 1) {
+        return clarificationResult({
+          draft,
+          parserModel,
+          missingFields: compactUnique([...missingFields, "affectedObject"]),
+          validationErrors,
+          question: "Ada lebih dari satu piutang yang mirip. Sebutkan nama pelanggan lebih spesifik.",
+        });
+      }
+
+      normalizedAffectedObject = matches[0].customerName;
+    }
+  }
+
   const compactMissingFields = compactUnique(missingFields);
   if (compactMissingFields.length > 0 || account === "ambiguous") {
     const intentIsMissing = compactMissingFields.includes("intent");
@@ -175,7 +338,7 @@ export function validateParserDraft(
     paymentAccountId: account?.id ?? null,
     paymentAccountName: account?.name ?? null,
     description: draft.description!.trim(),
-    affectedObject: draft.affectedObject?.trim() || null,
+    affectedObject: normalizedAffectedObject,
   };
 
   const warning =

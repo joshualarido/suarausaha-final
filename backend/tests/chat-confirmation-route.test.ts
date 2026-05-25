@@ -156,4 +156,23 @@ describe("chat and confirmation routes", () => {
       },
     });
   });
+
+  it("returns PAYMENT_AMOUNT_INVALID when liability payment exceeds outstanding amount", async () => {
+    const overpaymentError = new InvalidConfirmationStateError(
+      "Jumlah pembayaran melebihi sisa utang. Ubah jumlah pembayaran agar tidak lebih dari sisa utang.",
+    );
+    Object.assign(overpaymentError, { code: "PAYMENT_AMOUNT_INVALID" });
+    vi.mocked(confirmConfirmationRequest).mockRejectedValue(overpaymentError);
+
+    const response = await request(app).post("/api/v1/confirmations/confirm_123/confirm").send({});
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      success: false,
+      error: {
+        code: "PAYMENT_AMOUNT_INVALID",
+        message: "Jumlah pembayaran melebihi sisa utang. Ubah jumlah pembayaran agar tidak lebih dari sisa utang.",
+      },
+    });
+  });
 });

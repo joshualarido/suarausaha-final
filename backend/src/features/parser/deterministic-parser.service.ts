@@ -142,6 +142,42 @@ export function createDeterministicIntentParser(): IntentParser {
       const intent = classifyIntent(input.message);
       const matchingMenuItems = intent === "sales_income" ? findMatchingMenuItems(input.message, input.menuItems) : [];
 
+      if (intent === "sales_income" && input.menuItems.length === 0) {
+        return {
+          status: "needs_clarification",
+          proposedAction: null,
+          missingFields: ["menu_item_dependency"],
+          validationErrors: [],
+          question: "Menu jualan belum ada. Buat menu dulu di Katalog, lalu catat penjualan lagi.",
+          options: [],
+          confidence: 0.7,
+          parserModel: PARSER_MODEL,
+          parserVersion: PARSER_VERSION,
+          structuredPayload: {
+            rawInputText: input.message,
+            detectedIntent: intent,
+          },
+        };
+      }
+
+      if (intent === "sales_income" && matchingMenuItems.length === 0) {
+        return {
+          status: "needs_clarification",
+          proposedAction: null,
+          missingFields: ["menu_item_dependency"],
+          validationErrors: [],
+          question: "Menu yang dijual belum ada di katalog. Buat menu dulu di Katalog, lalu catat penjualan lagi.",
+          options: [],
+          confidence: 0.72,
+          parserModel: PARSER_MODEL,
+          parserVersion: PARSER_VERSION,
+          structuredPayload: {
+            rawInputText: input.message,
+            detectedIntent: intent,
+          },
+        };
+      }
+
       if (matchingMenuItems.length > 1) {
         return {
           status: "needs_clarification",

@@ -41,6 +41,7 @@ const navigationGroups = [
       { label: "Stok", href: "/app/stock", icon: Boxes },
       { label: "Aset", href: "/app/assets", icon: Landmark },
       { label: "Liabilitas", href: "/app/liabilities", icon: HandCoins },
+      { label: "Piutang", href: "/app/receivables", icon: BookOpenText },
     ],
   },
   {
@@ -97,6 +98,7 @@ export function DashboardLayout() {
       stock: "Stok",
       assets: "Aset",
       liabilities: "Liabilitas",
+      receivables: "Piutang",
       transactions: "Transaksi",
       settings: "Pengaturan",
       business: "Bisnis",

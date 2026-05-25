@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Hourglass, LockKeyhole, MessageCircle, Mic, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
+import { Check, Hourglass, LockKeyhole, MessageCircle, Mic, Paperclip, Pencil, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   cancelConfirmation,
@@ -8,6 +8,7 @@ import {
   editConfirmation,
   clearChatThread,
   parseChatMessage,
+  undoLatestTransactionViaChat,
   getChatThread,
 } from "@/lib/api-client";
 import { formatDateId } from "@/lib/date-format";
@@ -73,6 +74,7 @@ export function AppChatPage() {
   });
   const [pendingConfirmationRequestId, setPendingConfirmationRequestId] = useState(null);
   const [isClearingChat, setIsClearingChat] = useState(false);
+  const [isUndoingLatest, setIsUndoingLatest] = useState(false);
   const chatScrollRef = useRef(null);
 
   function hydrateChatItemsFromThread(messages) {
@@ -319,6 +321,26 @@ export function AppChatPage() {
     }
   }
 
+  async function handleUndoLatestTransaction() {
+    if (isBusy || isUndoingLatest) return;
+
+    setIsUndoingLatest(true);
+    setStatus("loading");
+    setIsEditing(false);
+    setActiveConfirmation(null);
+
+    try {
+      await undoLatestTransactionViaChat();
+      await refreshChatThread();
+      setStatus("idle");
+    } catch (error) {
+      appendSystemMessage(error.message || "Undo transaksi belum bisa diproses.");
+      setStatus("idle");
+    } finally {
+      setIsUndoingLatest(false);
+    }
+  }
+
   const isBusy = status === "loading";
 
   if (threadLoading) {
@@ -351,17 +373,30 @@ export function AppChatPage() {
             </div>
           </div>
         </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isBusy || isClearingChat}
-            onClick={handleClearChat}
-            className="h-9 gap-2 px-3"
-          >
-            <Trash2 aria-hidden className="h-4 w-4" />
-            {isClearingChat ? "Membersihkan..." : "Clear Chat"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isBusy || isUndoingLatest}
+              onClick={handleUndoLatestTransaction}
+              className="h-9 gap-2 px-3"
+            >
+              <RotateCcw aria-hidden className="h-4 w-4" />
+              {isUndoingLatest ? "Undo..." : "Undo"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isBusy || isClearingChat}
+              onClick={handleClearChat}
+              className="h-9 gap-2 px-3"
+            >
+              <Trash2 aria-hidden className="h-4 w-4" />
+              {isClearingChat ? "Membersihkan..." : "Clear Chat"}
+            </Button>
+          </div>
         </div>
       </header>
 

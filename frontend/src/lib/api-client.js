@@ -178,6 +178,10 @@ export async function parseChatMessage(message) {
   });
 }
 
+export async function undoLatestTransactionViaChat() {
+  return parseChatMessage("undo transaksi terakhir");
+}
+
 export async function getChatThread() {
   return apiRequest("/api/v1/chat/thread");
 }
@@ -291,6 +295,10 @@ export async function getAssetSummary() {
 
 export async function getLiabilitiesSummary() {
   return apiRequest("/api/v1/liabilities");
+}
+
+export async function getReceivablesSummary() {
+  return apiRequest("/api/v1/receivables");
 }
 
 export async function startGoogleSignIn(callbackPath = "/onboarding/business") {

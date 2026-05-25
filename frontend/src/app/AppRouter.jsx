@@ -14,6 +14,7 @@ import { AppChatPage } from "@/features/app/pages/AppChatPage";
 import { AppHistoryPage } from "@/features/app/pages/AppHistoryPage";
 import { AppLiabilitiesPage } from "@/features/app/pages/AppLiabilitiesPage";
 import { AppOverviewPage } from "@/features/app/pages/AppOverviewPage";
+import { AppReceivablesPage } from "@/features/app/pages/AppReceivablesPage";
 import { AppReportsPage } from "@/features/app/pages/AppReportsPage";
 import { AppStockPage } from "@/features/app/pages/AppStockPage";
 import { AppTransactionsPage } from "@/features/app/pages/AppTransactionsPage";
@@ -53,6 +54,7 @@ export function AppRouter() {
             <Route path="stock" element={<AppStockPage />} />
             <Route path="assets" element={<AppAssetsPage />} />
             <Route path="liabilities" element={<AppLiabilitiesPage />} />
+            <Route path="receivables" element={<AppReceivablesPage />} />
             <Route path="settings/business" element={<AppBusinessSettingsPage />} />
             <Route path="settings/user" element={<AppUserSettingsPage />} />
             <Route path="history" element={<AppHistoryPage />} />

@@ -191,13 +191,16 @@ describe("transaction read routes", () => {
   it("returns receivables summary", async () => {
     vi.mocked(getReceivableSummaryByBusinessId).mockResolvedValue({
       totalOriginalAmount: 500_000,
+      totalPaidAmount: 200_000,
       totalOutstandingAmount: 300_000,
       items: [
         {
           id: "receivable-1",
           customerName: "Budi",
           originalAmount: 500_000,
+          paidAmount: 200_000,
           outstandingAmount: 300_000,
+          remainingAmount: 300_000,
           status: "partial",
           createdDate: "2026-05-24",
           sourceTransactionId: "txn_654",
@@ -209,7 +212,15 @@ describe("transaction read routes", () => {
 
     expect(response.status).toBe(200);
     expect(getReceivableSummaryByBusinessId).toHaveBeenCalledWith("biz_123");
+    expect(response.body.data.totalPaidAmount).toBe(200000);
     expect(response.body.data.totalOutstandingAmount).toBe(300000);
+    expect(response.body.data.items[0]).toMatchObject({
+      customerName: "Budi",
+      originalAmount: 500000,
+      paidAmount: 200000,
+      remainingAmount: 300000,
+      status: "partial",
+    });
   });
 
   it("returns 404 if authenticated user has no business", async () => {

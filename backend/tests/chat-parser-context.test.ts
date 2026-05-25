@@ -1,5 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const parserLiabilityRows: Array<Record<string, unknown>> = [];
+const parserReceivableRows: Array<Record<string, unknown>> = [];
+
+vi.mock("../src/lib/database.js", () => {
+  function selectBuilder(table: string) {
+    const rows = table === "liabilities" ? parserLiabilityRows : parserReceivableRows;
+
+    return {
+      where: () => selectBuilder(table),
+      execute: async () => rows,
+    };
+  }
+
+  return {
+    db: {
+      selectFrom: vi.fn((table: string) => ({
+        select: () => selectBuilder(table),
+      })),
+    },
+  };
+});
+
 vi.mock("../src/lib/financial-write.js", () => {
   return {
     runFinancialWrite: vi.fn(async (callback) => callback(fakeTx)),
@@ -32,6 +54,15 @@ vi.mock("../src/features/parser/parser-engine.service.js", () => {
   };
 });
 
+vi.mock("../src/features/transactions/transaction.service.js", () => {
+  return {
+    reverseLatestTransactionForBusiness: vi.fn(),
+    NoReversibleTransactionError: class NoReversibleTransactionError extends Error {},
+    UnsafeReversalError: class UnsafeReversalError extends Error {},
+    InsufficientPaymentAccountBalanceError: class InsufficientPaymentAccountBalanceError extends Error {},
+  };
+});
+
 const fakeTx = {
   insertInto: vi.fn(() => fakeInsert),
 };
@@ -48,10 +79,27 @@ import { parseChatMessage } from "../src/features/chat/chat.service.js";
 import { listActiveMenuItemsByBusinessId } from "../src/features/menu-items/menu-item.service.js";
 import { listPaymentAccountsByBusinessId } from "../src/features/payment-accounts/payment-account.service.js";
 import { parserEngine } from "../src/features/parser/parser-engine.service.js";
+import { reverseLatestTransactionForBusiness } from "../src/features/transactions/transaction.service.js";
 
 describe("chat parser context", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    parserLiabilityRows.length = 0;
+    parserLiabilityRows.push({
+      id: "liab_1",
+      lenderName: "Supplier Ayam",
+      description: "Utang stok ayam",
+      outstandingAmount: "250000",
+      status: "open",
+    });
+    parserReceivableRows.length = 0;
+    parserReceivableRows.push({
+      id: "recv_1",
+      customerName: "Budi",
+      description: "Budi beli tempo",
+      outstandingAmount: "150000",
+      status: "open",
+    });
     vi.mocked(listPaymentAccountsByBusinessId).mockResolvedValue([
       {
         id: "acct_cash",
@@ -88,6 +136,10 @@ describe("chat parser context", () => {
       parserVersion: "test-v1",
       structuredPayload: {},
     });
+    vi.mocked(reverseLatestTransactionForBusiness).mockResolvedValue({
+      originalTransactionId: "txn_original_1",
+      reversalTransactionId: "txn_reversal_1",
+    } as never);
   });
 
   it("passes active menu items into parser context", async () => {
@@ -122,7 +174,39 @@ describe("chat parser context", () => {
             category: "Makanan",
           },
         ],
+        openLiabilities: [
+          {
+            id: "liab_1",
+            lenderName: "Supplier Ayam",
+            description: "Utang stok ayam",
+            outstandingAmount: 250_000,
+          },
+        ],
+        openReceivables: [
+          {
+            id: "recv_1",
+            customerName: "Budi",
+            description: "Budi beli tempo",
+            outstandingAmount: 150_000,
+          },
+        ],
       }),
     );
+  });
+
+  it("routes undo intent to reversal action instead of parser", async () => {
+    await parseChatMessage({
+      businessId: "biz_123",
+      userId: "user_123",
+      message: "undo transaksi terakhir",
+    });
+
+    expect(reverseLatestTransactionForBusiness).toHaveBeenCalledWith(
+      expect.objectContaining({
+        businessId: "biz_123",
+        userId: "user_123",
+      }),
+    );
+    expect(parserEngine.parse).not.toHaveBeenCalled();
   });
 });
