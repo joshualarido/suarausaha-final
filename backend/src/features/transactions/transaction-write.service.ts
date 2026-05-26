@@ -1,0 +1,214 @@
+import { randomUUID } from "node:crypto";
+import type { TransactionRow } from "../../lib/database.js";
+import { runFinancialWrite, type FinancialWriteTx } from "../../lib/financial-write.js";
+import {
+  affectedObjectOrDescription,
+  requireAffectedObject,
+  validateBaseTransactionInput,
+  type CreateBaseTransactionInput,
+} from "./transaction-types.js";
+import {
+  applyLiabilityPaymentEffect,
+  applyPaymentAccountEffect,
+  applyReceivablePaymentEffect,
+  createAssetRecord,
+  createInventoryRecord,
+  createLiabilityRecord,
+  createReceivableRecord,
+  getPaymentAccountForUpdate,
+  insertIncomeOrExpenseEffect,
+  resolveLiabilityForPayment,
+  resolveReceivableForPayment,
+  validatePaymentAccountAvailability,
+} from "./transaction-effects.service.js";
+import { createReversalTransactionInTransaction } from "./reversal.service.js";
+
+export async function createBaseTransactionInTransaction(
+  tx: FinancialWriteTx,
+  input: CreateBaseTransactionInput,
+): Promise<TransactionRow> {
+  validateBaseTransactionInput(input);
+
+  if (input.type === "reversal") {
+    return createReversalTransactionInTransaction(tx, input);
+  }
+
+  const now = new Date();
+  const amount = BigInt(input.amount);
+  const paymentAccount = await getPaymentAccountForUpdate(tx, input);
+  validatePaymentAccountAvailability(input.type, amount, paymentAccount);
+  const targetName = input.affectedObject?.trim();
+  const liabilityForPayment =
+    input.type === "liability_payment"
+      ? await resolveLiabilityForPayment(tx, {
+          businessId: input.businessId,
+          targetName: requireAffectedObject(input, "Utang yang mau dibayar harus disebutkan."),
+        })
+      : null;
+  const receivableForPayment =
+    input.type === "receivable_payment"
+      ? await resolveReceivableForPayment(tx, {
+          businessId: input.businessId,
+          targetName: requireAffectedObject(input, "Piutang yang dibayar harus disebutkan."),
+        })
+      : null;
+
+  const transaction = await tx
+    .insertInto("transactions")
+    .values({
+      id: randomUUID(),
+      businessId: input.businessId,
+      confirmationRequestId: input.confirmationRequestId ?? null,
+      parsedCommandId: input.parsedCommandId ?? null,
+      paymentAccountId: input.paymentAccountId ?? null,
+      type: input.type,
+      amount: BigInt(input.amount).toString(),
+      transactionDate: input.transactionDate,
+      description: input.description.trim(),
+      status: "confirmed",
+      isReversal: input.isReversal ?? false,
+      reversedAt: null,
+      createdAt: now,
+      createdBy: input.createdBy,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+
+  switch (input.type) {
+    case "sales_income":
+      await applyPaymentAccountEffect(tx, {
+        transaction,
+        paymentAccount,
+        delta: amount,
+        effectType: "payment_account_balance",
+        now,
+      });
+      await insertIncomeOrExpenseEffect(tx, { transaction, effectType: "income", amount, now });
+      break;
+    case "general_expense":
+      await applyPaymentAccountEffect(tx, {
+        transaction,
+        paymentAccount,
+        delta: -amount,
+        effectType: "payment_account_balance",
+        now,
+      });
+      await insertIncomeOrExpenseEffect(tx, { transaction, effectType: "expense", amount, now });
+      break;
+    case "inventory_purchase_value":
+      await applyPaymentAccountEffect(tx, {
+        transaction,
+        paymentAccount,
+        delta: -amount,
+        effectType: "payment_account_balance",
+        now,
+      });
+      await createInventoryRecord(tx, {
+        transaction,
+        name: affectedObjectOrDescription(input),
+        amount,
+        now,
+      });
+      break;
+    case "asset_record_or_purchase":
+      if (paymentAccount) {
+        await applyPaymentAccountEffect(tx, {
+          transaction,
+          paymentAccount,
+          delta: -amount,
+          effectType: "payment_account_balance",
+          now,
+        });
+      }
+      await createAssetRecord(tx, {
+        transaction,
+        name: affectedObjectOrDescription(input),
+        amount,
+        now,
+      });
+      break;
+    case "liability_created":
+      if (paymentAccount) {
+        await applyPaymentAccountEffect(tx, {
+          transaction,
+          paymentAccount,
+          delta: amount,
+          effectType: "payment_account_balance",
+          now,
+        });
+      }
+      await createLiabilityRecord(tx, {
+        transaction,
+        lenderName: targetName || input.description.trim(),
+        amount,
+        now,
+      });
+      break;
+    case "liability_payment":
+      await applyPaymentAccountEffect(tx, {
+        transaction,
+        paymentAccount,
+        delta: -amount,
+        effectType: "payment_account_balance",
+        now,
+      });
+      await applyLiabilityPaymentEffect(tx, {
+        transaction,
+        liability: liabilityForPayment!,
+        amount,
+        now,
+      });
+      break;
+    case "receivable_created":
+      await createReceivableRecord(tx, {
+        transaction,
+        customerName: targetName || input.description.trim(),
+        amount,
+        now,
+      });
+      await insertIncomeOrExpenseEffect(tx, { transaction, effectType: "income", amount, now });
+      break;
+    case "receivable_payment":
+      await applyPaymentAccountEffect(tx, {
+        transaction,
+        paymentAccount,
+        delta: amount,
+        effectType: "payment_account_balance",
+        now,
+      });
+      await applyReceivablePaymentEffect(tx, {
+        transaction,
+        receivable: receivableForPayment!,
+        amount,
+        now,
+      });
+      break;
+    case "owner_capital_contribution":
+      await applyPaymentAccountEffect(tx, {
+        transaction,
+        paymentAccount,
+        delta: amount,
+        effectType: "payment_account_balance",
+        now,
+      });
+      await insertIncomeOrExpenseEffect(tx, { transaction, effectType: "owner_capital", amount, now });
+      break;
+    case "owner_withdrawal":
+      await applyPaymentAccountEffect(tx, {
+        transaction,
+        paymentAccount,
+        delta: -amount,
+        effectType: "payment_account_balance",
+        now,
+      });
+      await insertIncomeOrExpenseEffect(tx, { transaction, effectType: "owner_withdrawal", amount, now });
+      break;
+  }
+
+  return transaction;
+}
+
+export async function createBaseTransaction(input: CreateBaseTransactionInput): Promise<TransactionRow> {
+  validateBaseTransactionInput(input);
+  return runFinancialWrite(async (tx) => createBaseTransactionInTransaction(tx, input));
+}

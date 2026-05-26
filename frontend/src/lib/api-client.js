@@ -170,6 +170,10 @@ export async function getPaymentAccounts() {
   return apiRequest("/api/v1/payment-accounts");
 }
 
+export async function getOverview(query = {}) {
+  return apiRequest(`/api/v1/overview${buildQueryString(query)}`);
+}
+
 export async function getMenuItems() {
   return apiRequest("/api/v1/menu-items");
 }
