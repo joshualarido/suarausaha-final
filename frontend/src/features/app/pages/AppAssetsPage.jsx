@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ApiClientError, getAssetSummary } from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { getAssetSummary } from "@/features/app/app.api";
 import { formatDateId } from "@/lib/date-format";
 
 export function AppAssetsPage() {

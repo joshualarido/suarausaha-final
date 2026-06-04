@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ApiClientError, getReceivablesSummary } from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { getReceivablesSummary } from "@/features/app/app.api";
 import { formatDateId } from "@/lib/date-format";
 
 export function AppReceivablesPage() {

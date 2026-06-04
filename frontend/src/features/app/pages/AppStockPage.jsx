@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ApiClientError, getInventorySummary } from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { getInventorySummary } from "@/features/app/app.api";
 import { formatDateTimeId } from "@/lib/date-format";
 
 export function AppStockPage() {

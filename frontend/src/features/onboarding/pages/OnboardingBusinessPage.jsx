@@ -3,15 +3,10 @@ import { ArrowLeft, CheckCircle2, Lock, LogOut, ShieldCheck } from "lucide-react
 import { useNavigate } from "react-router-dom";
 import { useSession } from "@/features/auth/session-context";
 import { Button } from "@/components/ui/button";
-import {
-  ApiClientError,
-  confirmOpeningBalance,
-  createBusinessProfile,
-  getBusinessProfile,
-  previewOpeningBalance,
-  signOutUser,
-  updateBusinessProfile,
-} from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { signOutUser } from "@/features/auth/auth.api";
+import { createBusinessProfile, getBusinessProfile, updateBusinessProfile } from "@/features/business/business.api";
+import { confirmOpeningBalance, previewOpeningBalance } from "@/features/onboarding/opening-balance.api";
 
 const moneyFields = [
   {

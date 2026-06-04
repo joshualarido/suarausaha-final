@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { ApiClientError, getBusinessProfile, getCurrentUser } from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { getCurrentUser } from "@/features/auth/auth.api";
+import { getBusinessProfile } from "@/features/business/business.api";
 
 const SessionContext = createContext(null);
 

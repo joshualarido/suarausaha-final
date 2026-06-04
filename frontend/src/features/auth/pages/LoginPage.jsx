@@ -2,7 +2,8 @@ import { useState } from "react";
 import { FcGoogle } from "react-icons/fc";
 import { FiLock, FiShield } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
-import { ApiClientError, startGoogleSignIn } from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { startGoogleSignIn } from "@/features/auth/auth.api";
 
 function BrandLogo() {
   return (

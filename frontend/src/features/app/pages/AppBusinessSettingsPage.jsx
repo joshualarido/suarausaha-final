@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Building2, Plus, Save, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ApiClientError } from "@/lib/api-client";
+import { getBusinessProfile, updateBusinessProfile } from "@/features/business/business.api";
 import {
-  ApiClientError,
   createPaymentAccount,
-  getBusinessProfile,
   getPaymentAccounts,
   removePaymentAccount,
   setDefaultPaymentAccount,
-  updateBusinessProfile,
   updatePaymentAccountName,
-} from "@/lib/api-client";
+} from "@/features/payment-accounts/payment-accounts.api";
 
 function normalizeError(error, fallback) {
   if (error instanceof ApiClientError || error instanceof Error) {

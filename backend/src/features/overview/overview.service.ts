@@ -5,6 +5,7 @@ import {
   getLiabilitySummaryByBusinessId,
   getReceivableSummaryByBusinessId,
 } from "../transactions/transaction.service.js";
+import { extractAffectedObject, toPaymentAccountDto } from "../transactions/transaction-dto.mapper.js";
 
 export interface OverviewInput {
   businessId: string;
@@ -201,25 +202,10 @@ async function getLatestConfirmedTransactions(businessId: string): Promise<Overv
       date: row.transactionDate,
       description: row.description,
       affectedObject: extractAffectedObject(row.proposedActionJson),
-      paymentAccount:
-        row.paymentAccountId && row.paymentAccountName
-          ? {
-              id: row.paymentAccountId,
-              name: row.paymentAccountName,
-            }
-          : null,
+      paymentAccount: toPaymentAccountDto(row.paymentAccountId, row.paymentAccountName),
       cashDirection: cashDirectionFromEffects(effects),
     };
   });
-}
-
-function extractAffectedObject(proposedActionJson: unknown): string | null {
-  const payload =
-    proposedActionJson && typeof proposedActionJson === "object" && !Array.isArray(proposedActionJson)
-      ? proposedActionJson as Record<string, unknown>
-      : null;
-  const affectedObject = payload?.affectedObject;
-  return typeof affectedObject === "string" && affectedObject.trim() ? affectedObject.trim() : null;
 }
 
 export async function getOverviewByBusinessId(input: OverviewInput) {

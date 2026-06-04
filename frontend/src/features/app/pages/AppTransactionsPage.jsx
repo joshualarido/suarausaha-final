@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PaginationControls } from "@/features/app/components/PaginationControls";
-import { ApiClientError, getTransactions } from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { getTransactions } from "@/features/app/app.api";
 import { formatDateId } from "@/lib/date-format";
 
 const typeOptions = [

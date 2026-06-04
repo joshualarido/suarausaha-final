@@ -1,35 +1,6 @@
-import { db, type TransactionRow } from "../../lib/database.js";
+import { db } from "../../lib/database.js";
+import { extractAffectedObject, toPaymentAccountDto, toTransactionHistoryStatus } from "./transaction-dto.mapper.js";
 import { toNumber, type TransactionType } from "./transaction-types.js";
-
-function parseJsonObject(value: unknown): Record<string, unknown> | null {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
-}
-
-export function extractAffectedObject(proposedActionJson: unknown): string | null {
-  const payload = parseJsonObject(proposedActionJson);
-  if (!payload) return null;
-
-  const affectedObject = payload.affectedObject;
-  if (typeof affectedObject !== "string") return null;
-
-  const trimmed = affectedObject.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
 
 export interface TransactionHistoryItem {
   id: string;
@@ -64,11 +35,6 @@ export interface ListTransactionHistoryInput {
   toDate?: string;
 }
 
-function toHistoryStatus(type: string, status: TransactionRow["status"], isReversal: boolean): "confirmed" | "reversed" | "reversal" {
-  if (type === "reversal" || isReversal) return "reversal";
-  return status;
-}
-
 interface TransactionHistoryRow {
   id: string;
   type: string;
@@ -91,16 +57,10 @@ function toTransactionHistoryItem(row: TransactionHistoryRow): TransactionHistor
     amount: toNumber(row.amount),
     date: row.transactionDate,
     description: row.description,
-    status: toHistoryStatus(row.type, row.status, row.isReversal),
+    status: toTransactionHistoryStatus(row.type, row.status, row.isReversal),
     isReversed: row.status === "reversed",
     affectedObject: extractAffectedObject(row.proposedActionJson),
-    paymentAccount:
-      row.paymentAccountId && row.paymentAccountName
-        ? {
-            id: row.paymentAccountId,
-            name: row.paymentAccountName,
-          }
-        : null,
+    paymentAccount: toPaymentAccountDto(row.paymentAccountId, row.paymentAccountName),
     captureMode: row.confirmationRequestId ? "confirmed_flow" : "auto_fast",
     createdAt: row.createdAt,
   };

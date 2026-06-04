@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChefHat, Plus, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ApiClientError, createMenuItem, getMenuItems, removeMenuItem, updateMenuItem } from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { createMenuItem, getMenuItems, removeMenuItem, updateMenuItem } from "@/features/catalog/menu-items.api";
 
 const emptyDraft = {
   name: "",

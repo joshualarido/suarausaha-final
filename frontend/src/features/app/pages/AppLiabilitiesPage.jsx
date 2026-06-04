@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ApiClientError, getLiabilitiesSummary } from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { getLiabilitiesSummary } from "@/features/app/app.api";
 import { formatDateId } from "@/lib/date-format";
 
 export function AppLiabilitiesPage() {

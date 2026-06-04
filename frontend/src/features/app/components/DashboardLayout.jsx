@@ -20,7 +20,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session-context";
-import { ApiClientError, APP_NOTIFICATION_EVENT, debugResetOnboarding, signOutUser } from "@/lib/api-client";
+import { ApiClientError, APP_NOTIFICATION_EVENT } from "@/lib/api-client";
+import { signOutUser } from "@/features/auth/auth.api";
+import { debugResetOnboarding } from "@/features/business/business.api";
 import { BrandLogo } from "./BrandLogo";
 
 const navigationGroups = [

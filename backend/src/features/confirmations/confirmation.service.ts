@@ -13,7 +13,8 @@ import {
   UnsafeReversalError,
   type TransactionType,
 } from "../transactions/transaction.service.js";
-import { proposedActionSchema, type ProposedAction } from "../parser/parser.types.js";
+import { parseProposedActionJson, toConfirmationResponseDto } from "../transactions/transaction-dto.mapper.js";
+import type { ProposedAction } from "../parser/parser.types.js";
 
 const CONFIRMATION_TTL_MS = 15 * 60 * 1000;
 export type ConfirmationStateErrorCode =
@@ -134,7 +135,7 @@ function summaryFor(action: ProposedAction): string {
 }
 
 function parseAction(value: unknown): ProposedAction {
-  return proposedActionSchema.parse(value);
+  return parseProposedActionJson(value);
 }
 
 function toConfirmationStateError(error: unknown): InvalidConfirmationStateError | null {
@@ -439,16 +440,5 @@ export async function editConfirmationRequest(input: EditConfirmationRequestInpu
 }
 
 export function toConfirmationResponse(confirmation: ConfirmationRequestRow) {
-  return {
-    id: confirmation.id,
-    status: confirmation.status,
-    proposedAction: confirmation.proposedActionJson,
-    summaryText: confirmation.summaryText,
-    warningText: confirmation.warningText,
-    expectedEffects: confirmation.expectedEffectsJson,
-    expiresAt: confirmation.expiresAt,
-    confirmedAt: confirmation.confirmedAt,
-    cancelledAt: confirmation.cancelledAt,
-    resultingTransactionId: confirmation.resultingTransactionId,
-  };
+  return toConfirmationResponseDto(confirmation);
 }

@@ -21,7 +21,8 @@ import {
 } from "lucide-react";
 import { useSession } from "@/features/auth/session-context";
 import { cn } from "@/lib/utils";
-import { ApiClientError, getOverview } from "@/lib/api-client";
+import { ApiClientError } from "@/lib/api-client";
+import { getOverview } from "@/features/app/app.api";
 import { formatDateId } from "@/lib/date-format";
 
 const transactionTypeLabel = {
