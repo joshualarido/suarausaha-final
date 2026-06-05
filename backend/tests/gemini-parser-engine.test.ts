@@ -302,6 +302,37 @@ describe("Gemini parser draft validation", () => {
     expect(result.question).toContain("Buat data utang dulu");
   });
 
+  it("normalizes a Gemini liability id target to the lender name", () => {
+    const result = validateParserDraft(
+      baseInput({
+        message: "bayar utang Supplier ayam 300 ribu pakai kas tanggal 4 Juni 2026",
+        today: "2026-06-05",
+      }),
+      baseDraft({
+        detectedIntent: "liability_payment",
+        amount: 300_000,
+        date: "2026-06-04",
+        description: "Bayar utang Supplier ayam",
+        affectedObject: "liab_1",
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent: "liability_payment",
+      amount: 300_000,
+      date: "2026-06-04",
+      paymentAccountId: "acct_cash",
+      paymentAccountName: "Kas",
+      affectedObject: "Supplier Ayam",
+    });
+    expect(result.proposedAction?.expectedEffects).toEqual([
+      "Kas berkurang Rp300.000",
+      "Utang Supplier Ayam berkurang Rp300.000",
+    ]);
+  });
+
   it("asks user to create receivable first when receivable target does not exist", () => {
     const result = validateParserDraft(
       baseInput({
@@ -320,6 +351,101 @@ describe("Gemini parser draft validation", () => {
     expect(result.status).toBe("needs_clarification");
     expect(result.missingFields).toContain("receivable_dependency");
     expect(result.question).toContain("Buat data piutang dulu");
+  });
+
+  it("normalizes a Gemini receivable id target to the customer name", () => {
+    const result = validateParserDraft(
+      baseInput({
+        message: "Budi bayar piutang 100 ribu pakai kas tanggal 4 Juni 2026",
+        today: "2026-06-05",
+      }),
+      baseDraft({
+        detectedIntent: "receivable_payment",
+        amount: 100_000,
+        date: "2026-06-04",
+        description: "Budi bayar piutang",
+        affectedObject: "recv_1",
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent: "receivable_payment",
+      amount: 100_000,
+      date: "2026-06-04",
+      paymentAccountId: "acct_cash",
+      paymentAccountName: "Kas",
+      affectedObject: "Budi",
+    });
+    expect(result.proposedAction?.expectedEffects).toEqual([
+      "Kas bertambah Rp100.000",
+      "Piutang Budi berkurang Rp100.000",
+    ]);
+  });
+
+  it("treats multiple receivables for the same customer as one payment target", () => {
+    const result = validateParserDraft(
+      baseInput({
+        message: "Budi bayar piutang 100 ribu tunai tanggal 4 Juni 2026",
+        today: "2026-06-05",
+        openReceivables: [
+          {
+            id: "recv_budi_1",
+            customerName: "Budi",
+            description: "Budi beli tempo",
+            outstandingAmount: 150_000,
+          },
+          {
+            id: "recv_budi_2",
+            customerName: "Budi",
+            description: "Budi ambil katering",
+            outstandingAmount: 200_000,
+          },
+        ],
+      }),
+      baseDraft({
+        detectedIntent: "receivable_payment",
+        amount: 100_000,
+        date: "2026-06-04",
+        description: "Budi bayar piutang",
+        affectedObject: "Budi",
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent: "receivable_payment",
+      amount: 100_000,
+      affectedObject: "Budi",
+    });
+    expect(result.proposedAction?.warning).toContain("Ini tidak menambah pendapatan lagi");
+  });
+
+  it("overrides a Gemini expense draft when the purchase is stock-vs-expense ambiguous", () => {
+    const result = validateParserDraft(
+      baseInput({
+        message: "beli bahan masak 50 ribu pakai kas tanggal 4 Juni 2026",
+        today: "2026-06-05",
+      }),
+      baseDraft({
+        detectedIntent: "general_expense",
+        amount: 50_000,
+        date: "2026-06-04",
+        description: "Beli bahan masak",
+        affectedObject: null,
+        confidence: 0.92,
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.question).toBe("Ini mau dicatat sebagai stok/persediaan atau sebagai biaya langsung?");
+    expect(result.options).toEqual([
+      { label: "Stok / Persediaan", value: "inventory_purchase_value" },
+      { label: "Biaya langsung", value: "general_expense" },
+    ]);
   });
 });
 

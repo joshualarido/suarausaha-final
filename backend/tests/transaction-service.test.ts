@@ -21,6 +21,7 @@ import {
 function buildTx(options?: {
   currentBalance?: string;
   hasAccount?: boolean;
+  menuItems?: Array<Record<string, unknown>>;
   liabilities?: Array<Record<string, unknown>>;
   receivables?: Array<Record<string, unknown>>;
 }) {
@@ -38,6 +39,7 @@ function buildTx(options?: {
           ],
     liabilities: options?.liabilities ?? [],
     receivables: options?.receivables ?? [],
+    menuItems: options?.menuItems ?? [],
     transactions: [] as Array<Record<string, unknown>>,
     effects: [] as Array<Record<string, unknown>>,
     inventory: [] as Array<Record<string, unknown>>,
@@ -51,6 +53,7 @@ function buildTx(options?: {
     if (table === "payment_accounts") return state.paymentAccounts;
     if (table === "liabilities") return state.liabilities;
     if (table === "receivables") return state.receivables;
+    if (table === "menu_items") return state.menuItems;
     if (table === "transactions") return state.transactions;
     if (table === "transaction_effects") return state.effects;
     if (table === "inventory_summaries") return state.inventory;
@@ -197,7 +200,10 @@ describe("transaction service", () => {
   });
 
   it("increases payment account balance for sales income", async () => {
-    const { tx, state } = buildTx({ currentBalance: "500000" });
+    const { tx, state } = buildTx({
+      currentBalance: "500000",
+      menuItems: [{ id: "menu_ayam_geprek", businessId: "biz_123", name: "Ayam Geprek", status: "active" }],
+    });
 
     await createBaseTransactionInTransaction(tx as never, {
       businessId: "biz_123",
@@ -206,6 +212,7 @@ describe("transaction service", () => {
       amount: 250_000,
       transactionDate: "2026-05-12",
       description: "Jual ayam geprek",
+      affectedObject: "Ayam Geprek",
       paymentAccountId: "acct_cash",
     });
 
@@ -367,6 +374,48 @@ describe("transaction service", () => {
     expect(state.effects).not.toEqual(expect.arrayContaining([expect.objectContaining({ effectType: "expense" })]));
   });
 
+  it("pays a liability matched by id without creating expense", async () => {
+    const { tx, state } = buildTx({
+      currentBalance: "400000",
+      liabilities: [
+        {
+          id: "liability_supplier",
+          businessId: "biz_123",
+          lenderName: "Supplier ayam",
+          description: "Utang supplier ayam",
+          originalAmount: "700000",
+          outstandingAmount: "700000",
+          status: "open",
+        },
+      ],
+    });
+
+    await createBaseTransactionInTransaction(tx as never, {
+      businessId: "biz_123",
+      createdBy: "user_123",
+      type: "liability_payment",
+      amount: 300_000,
+      transactionDate: "2026-06-04",
+      description: "Bayar utang Supplier ayam",
+      affectedObject: "liability_supplier",
+      paymentAccountId: "acct_cash",
+    });
+
+    expect(state.updatedBalance).toBe("100000");
+    expect(state.liabilities[0]).toMatchObject({ outstandingAmount: "400000", status: "partial" });
+    expect(state.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetType: "liability",
+          targetId: "liability_supplier",
+          direction: "decrease",
+          amount: "300000",
+        }),
+      ]),
+    );
+    expect(state.effects).not.toEqual(expect.arrayContaining([expect.objectContaining({ effectType: "expense" })]));
+  });
+
   it("creates receivable income without increasing cash", async () => {
     const { tx, state } = buildTx({ currentBalance: "100000" });
 
@@ -418,6 +467,86 @@ describe("transaction service", () => {
 
     expect(state.updatedBalance).toBe("200000");
     expect(state.receivables[0]).toMatchObject({ outstandingAmount: "50000", status: "partial" });
+    expect(state.effects).not.toEqual(expect.arrayContaining([expect.objectContaining({ effectType: "income" })]));
+  });
+
+  it("receives piutang payment matched by id without recognizing income again", async () => {
+    const { tx, state } = buildTx({
+      currentBalance: "100000",
+      receivables: [
+        {
+          id: "receivable_budi",
+          businessId: "biz_123",
+          customerName: "Budi",
+          description: "Budi beli belum bayar",
+          originalAmount: "150000",
+          outstandingAmount: "150000",
+          status: "open",
+        },
+      ],
+    });
+
+    await createBaseTransactionInTransaction(tx as never, {
+      businessId: "biz_123",
+      createdBy: "user_123",
+      type: "receivable_payment",
+      amount: 100_000,
+      transactionDate: "2026-06-04",
+      description: "Budi bayar piutang",
+      affectedObject: "receivable_budi",
+      paymentAccountId: "acct_cash",
+    });
+
+    expect(state.updatedBalance).toBe("200000");
+    expect(state.receivables[0]).toMatchObject({ outstandingAmount: "50000", status: "partial" });
+    expect(state.effects).not.toEqual(expect.arrayContaining([expect.objectContaining({ effectType: "income" })]));
+  });
+
+  it("allocates piutang payment across multiple rows for the same customer without recognizing income again", async () => {
+    const { tx, state } = buildTx({
+      currentBalance: "100000",
+      receivables: [
+        {
+          id: "receivable_budi_1",
+          businessId: "biz_123",
+          customerName: "Budi",
+          description: "Budi beli tempo",
+          originalAmount: "50000",
+          outstandingAmount: "50000",
+          status: "open",
+        },
+        {
+          id: "receivable_budi_2",
+          businessId: "biz_123",
+          customerName: "Budi",
+          description: "Budi katering",
+          originalAmount: "300000",
+          outstandingAmount: "300000",
+          status: "open",
+        },
+      ],
+    });
+
+    await createBaseTransactionInTransaction(tx as never, {
+      businessId: "biz_123",
+      createdBy: "user_123",
+      type: "receivable_payment",
+      amount: 100_000,
+      transactionDate: "2026-06-04",
+      description: "Budi bayar piutang",
+      affectedObject: "Budi",
+      paymentAccountId: "acct_cash",
+    });
+
+    expect(state.updatedBalance).toBe("200000");
+    expect(state.receivables[0]).toMatchObject({ outstandingAmount: "0", status: "paid" });
+    expect(state.receivables[1]).toMatchObject({ outstandingAmount: "250000", status: "partial" });
+    expect(state.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetId: "receivable_budi_1", amount: "50000" }),
+        expect.objectContaining({ targetId: "receivable_budi_2", amount: "50000" }),
+      ]),
+    );
     expect(state.effects).not.toEqual(expect.arrayContaining([expect.objectContaining({ effectType: "income" })]));
   });
 
@@ -478,7 +607,9 @@ describe("transaction service", () => {
   });
 
   it("requires payment account for money movement transaction types", async () => {
-    const { tx } = buildTx();
+    const { tx } = buildTx({
+      menuItems: [{ id: "menu_ayam_geprek", businessId: "biz_123", name: "Ayam Geprek", status: "active" }],
+    });
 
     await expect(
       createBaseTransactionInTransaction(tx as never, {
@@ -488,8 +619,31 @@ describe("transaction service", () => {
         amount: 100_000,
         transactionDate: "2026-05-12",
         description: "Jual ayam geprek",
+        affectedObject: "Ayam Geprek",
       }),
     ).rejects.toBeInstanceOf(MissingPaymentAccountForTransactionError);
+  });
+
+  it("rejects sales income when the affected object is not an active catalog item", async () => {
+    const { tx, state } = buildTx({
+      currentBalance: "500000",
+      menuItems: [{ id: "menu_nasi_goreng", businessId: "biz_123", name: "Nasi Goreng", status: "active" }],
+    });
+
+    await expect(
+      createBaseTransactionInTransaction(tx as never, {
+        businessId: "biz_123",
+        createdBy: "user_123",
+        type: "sales_income",
+        amount: 100_000,
+        transactionDate: "2026-05-12",
+        description: "Jual ayam geprek",
+        affectedObject: "Ayam Geprek",
+        paymentAccountId: "acct_cash",
+      }),
+    ).rejects.toBeInstanceOf(FinancialTargetNotFoundError);
+
+    expect(state.insertedTransaction).toBeNull();
   });
 
   it("requires affected object when paying a liability", async () => {

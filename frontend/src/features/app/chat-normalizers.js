@@ -65,13 +65,34 @@ export function normalizeConfirmation(data) {
   if (!data) return null;
 
   if (data.status === "requires_confirmation") {
+    const proposedNeracaReport = data.proposedNeracaReport ?? data.confirmation?.proposedNeracaReport?.preview ?? data.confirmation?.proposedNeracaReport;
+    if (proposedNeracaReport) {
+      return {
+        id: data.confirmationRequestId,
+        type: "neraca_report",
+        proposedNeracaReport,
+        confirmation: data.confirmation,
+      };
+    }
+
     const proposedAction = normalizeProposedAction(data.proposedAction ?? data.confirmation?.proposedAction);
     if (!proposedAction) return null;
 
     return {
       id: data.confirmationRequestId,
+      type: "transaction",
       proposedAction,
       confirmation: data.confirmation,
+    };
+  }
+
+  if (data.type === "neraca_report") {
+    const proposedPayload = data.proposedNeracaReport ?? {};
+    return {
+      id: data.id,
+      type: "neraca_report",
+      proposedNeracaReport: proposedPayload.preview ?? proposedPayload,
+      confirmation: data,
     };
   }
 
@@ -80,6 +101,7 @@ export function normalizeConfirmation(data) {
 
   return {
     id: data.id,
+    type: "transaction",
     proposedAction,
     confirmation: data,
   };

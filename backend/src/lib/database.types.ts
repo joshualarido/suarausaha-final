@@ -181,7 +181,7 @@ export interface ConfirmationRequestRow {
   businessId: string;
   userId: string;
   parsedCommandId: string | null;
-  type: "transaction";
+  type: "transaction" | "neraca_report";
   status: "pending" | "confirmed" | "cancelled" | "expired" | "failed";
   proposedActionJson: unknown;
   summaryText: string;
@@ -191,8 +191,40 @@ export interface ConfirmationRequestRow {
   confirmedAt: Date | null;
   cancelledAt: Date | null;
   resultingTransactionId: string | null;
+  resultingNeracaReportId: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface NeracaReportRow {
+  id: string;
+  businessId: string;
+  confirmationRequestId: string | null;
+  reportDate: string;
+  generatedAt: Date;
+  generatedBy: string;
+  totalAktiva: string;
+  totalPasiva: string;
+  totalUtang: string;
+  totalEkuitas: string;
+  reconciliationStatus: "seimbang" | "tidak_seimbang";
+  difference: string;
+  cash: string;
+  nonCash: string;
+  receivable: string;
+  inventory: string;
+  asset: string;
+  debt: string;
+  openingEquity: string;
+  ownerCapital: string;
+  ownerWithdrawal: string;
+  income: string;
+  expense: string;
+  runningProfit: string;
+  warningText: string | null;
+  assumptionsJson: unknown;
+  snapshotJson: unknown;
+  createdAt: Date;
 }
 
 export interface ChatSessionRow {
@@ -226,6 +258,7 @@ export interface DatabaseSchema {
   opening_balances: OpeningBalanceRow;
   parsed_commands: ParsedCommandRow;
   confirmation_requests: ConfirmationRequestRow;
+  neraca_reports: NeracaReportRow;
   chat_sessions: ChatSessionRow;
   chat_messages: ChatMessageRow;
   transactions: TransactionRow;

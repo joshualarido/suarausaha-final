@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const parserLiabilityRows: Array<Record<string, unknown>> = [];
 const parserReceivableRows: Array<Record<string, unknown>> = [];
+let parserCommandRow: Record<string, unknown> | null = null;
 
 vi.mock("../src/lib/database.js", () => {
   function selectBuilder(table: string) {
@@ -15,7 +16,26 @@ vi.mock("../src/lib/database.js", () => {
   return {
     db: {
       selectFrom: vi.fn((table: string) => ({
-        select: () => selectBuilder(table),
+        selectAll: () => ({
+          where: () => ({
+            where: () => ({
+              where: () => ({
+                executeTakeFirst: async () => (table === "parsed_commands" ? parserCommandRow : null),
+              }),
+            }),
+          }),
+        }),
+        select: () => (table === "parsed_commands"
+          ? {
+              where: () => ({
+                where: () => ({
+                  where: () => ({
+                    executeTakeFirst: async () => parserCommandRow,
+                  }),
+                }),
+              }),
+            }
+          : selectBuilder(table)),
       })),
     },
   };
@@ -104,7 +124,7 @@ vi.mock("../src/features/transactions/transaction.service.js", () => {
   };
 });
 
-import { parseChatMessage } from "../src/features/chat/chat.service.js";
+import { clarifyChatMessage, parseChatMessage } from "../src/features/chat/chat.service.js";
 import { createConfirmationRequest } from "../src/features/confirmations/confirmation.service.js";
 import { listActiveMenuItemsByBusinessId } from "../src/features/menu-items/menu-item.service.js";
 import { listPaymentAccountsByBusinessId } from "../src/features/payment-accounts/payment-account.service.js";
@@ -116,6 +136,7 @@ describe("chat auto-write mode", () => {
     vi.clearAllMocks();
     parserLiabilityRows.length = 0;
     parserReceivableRows.length = 0;
+    parserCommandRow = null;
 
     vi.mocked(listPaymentAccountsByBusinessId).mockResolvedValue([
       {
@@ -220,7 +241,7 @@ describe("chat auto-write mode", () => {
     const result = await parseChatMessage({
       businessId: "biz_123",
       userId: "user_123",
-      message: "beli stok ayam 90 ribu",
+      message: "catat aset etalase 90 ribu",
     });
 
     expect(result).toMatchObject({
@@ -265,5 +286,76 @@ describe("chat auto-write mode", () => {
     });
     expect(createBaseTransactionInTransaction).not.toHaveBeenCalled();
     expect(createConfirmationRequest).not.toHaveBeenCalled();
+  });
+
+  it("clarifies ambiguous bahan purchases before parser output can auto-save", async () => {
+    const result = await parseChatMessage({
+      businessId: "biz_123",
+      userId: "user_123",
+      message: "beli bahan masak 50 ribu pakai kas tanggal 4 Juni 2026",
+    });
+
+    expect(result).toMatchObject({
+      status: "requires_clarification",
+      question: "Ini mau dicatat sebagai stok/persediaan atau sebagai biaya langsung?",
+      options: [
+        { label: "Stok / Persediaan", value: "inventory_purchase_value" },
+        { label: "Biaya langsung", value: "general_expense" },
+      ],
+    });
+    expect(parserEngine.parse).not.toHaveBeenCalled();
+    expect(createBaseTransactionInTransaction).not.toHaveBeenCalled();
+    expect(createConfirmationRequest).not.toHaveBeenCalled();
+  });
+
+  it("creates a confirmation card after resolving an ambiguous purchase as direct expense", async () => {
+    parserCommandRow = {
+      id: "parsed_123",
+      businessId: "biz_123",
+      userId: "user_123",
+      rawInputText: "beli bahan masak 50 ribu pakai kas tanggal 4 Juni 2026",
+      detectedIntent: "ambiguous_purchase",
+      structuredPayload: JSON.stringify({
+        rawInputText: "beli bahan masak 50 ribu pakai kas tanggal 4 Juni 2026",
+        amount: 50_000,
+        date: "2026-06-04",
+        detectedIntent: "ambiguous_purchase",
+        ambiguityType: "inventory_or_direct_expense",
+      }),
+    };
+    vi.mocked(createConfirmationRequest).mockResolvedValue({
+      id: "confirm_123",
+      proposedActionJson: {},
+    } as never);
+
+    const result = await clarifyChatMessage({
+      businessId: "biz_123",
+      userId: "user_123",
+      clarificationId: "parsed_123",
+      answer: "general_expense",
+    });
+
+    expect(result).toMatchObject({
+      status: "requires_confirmation",
+      confirmationRequestId: "confirm_123",
+      proposedAction: {
+        intent: "general_expense",
+        amount: 50_000,
+        date: "2026-06-04",
+        paymentAccountId: "acct_cash",
+        paymentAccountName: "Kas",
+      },
+    });
+    expect(parserEngine.parse).not.toHaveBeenCalled();
+    expect(createBaseTransactionInTransaction).not.toHaveBeenCalled();
+    expect(createConfirmationRequest).toHaveBeenCalledWith(
+      fakeTx as never,
+      expect.objectContaining({
+        proposedAction: expect.objectContaining({
+          intent: "general_expense",
+          expectedEffects: ["Kas berkurang Rp50.000", "Biaya bertambah Rp50.000"],
+        }),
+      }),
+    );
   });
 });

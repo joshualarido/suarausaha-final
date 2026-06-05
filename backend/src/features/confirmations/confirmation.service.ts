@@ -15,6 +15,7 @@ import {
 } from "../transactions/transaction.service.js";
 import { parseProposedActionJson, toConfirmationResponseDto } from "../transactions/transaction-dto.mapper.js";
 import type { ProposedAction } from "../parser/parser.types.js";
+import { createNeracaReportInTransaction, type NeracaSnapshotData } from "../neraca/neraca.service.js";
 
 const CONFIRMATION_TTL_MS = 15 * 60 * 1000;
 export type ConfirmationStateErrorCode =
@@ -48,6 +49,14 @@ export interface CreateConfirmationRequestInput {
   userId: string;
   parsedCommandId: string | null;
   proposedAction: ProposedAction;
+}
+
+export interface CreateNeracaConfirmationRequestInput {
+  businessId: string;
+  userId: string;
+  parsedCommandId: string | null;
+  reportDate: string;
+  preview: NeracaSnapshotData;
 }
 
 export interface ConfirmConfirmationRequestInput {
@@ -132,6 +141,18 @@ function summaryFor(action: ProposedAction): string {
   };
 
   return `${labels[action.intent]} Rp${amount}`;
+}
+
+function summaryForNeraca(reportDate: string): string {
+  return `Buat laporan neraca per ${reportDate}`;
+}
+
+function parseNeracaPayload(value: unknown): { reportDate: string } {
+  const payload = typeof value === "string" ? JSON.parse(value) : value;
+  if (payload && typeof payload === "object" && "reportDate" in payload && typeof payload.reportDate === "string") {
+    return { reportDate: payload.reportDate };
+  }
+  return { reportDate: new Date().toISOString().slice(0, 10) };
 }
 
 function parseAction(value: unknown): ProposedAction {
@@ -229,6 +250,49 @@ export async function createConfirmationRequest(
       confirmedAt: null,
       cancelledAt: null,
       resultingTransactionId: null,
+      resultingNeracaReportId: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+}
+
+export async function createNeracaConfirmationRequest(
+  tx: FinancialWriteTx,
+  input: CreateNeracaConfirmationRequestInput,
+): Promise<ConfirmationRequestRow> {
+  const now = new Date();
+  await cancelPendingConfirmationsInTransaction(tx, {
+    businessId: input.businessId,
+    userId: input.userId,
+  });
+
+  return tx
+    .insertInto("confirmation_requests")
+    .values({
+      id: randomUUID(),
+      businessId: input.businessId,
+      userId: input.userId,
+      parsedCommandId: input.parsedCommandId,
+      type: "neraca_report",
+      status: "pending",
+      proposedActionJson: JSON.stringify({
+        kind: "neraca_report",
+        reportDate: input.reportDate,
+        preview: input.preview,
+      }),
+      summaryText: summaryForNeraca(input.reportDate),
+      warningText: input.preview.warningText,
+      expectedEffectsJson: JSON.stringify([
+        "Backend menghitung neraca dari data yang sudah dikonfirmasi.",
+        "Laporan disimpan sebagai snapshot dan tidak berubah setelah dibuat.",
+      ]),
+      expiresAt: expiresAtFrom(now),
+      confirmedAt: null,
+      cancelledAt: null,
+      resultingTransactionId: null,
+      resultingNeracaReportId: null,
       createdAt: now,
       updatedAt: now,
     })
@@ -310,17 +374,31 @@ export async function cancelConfirmationRequest(
 
 export async function confirmConfirmationRequest(
   input: ConfirmConfirmationRequestInput,
-): Promise<{ transactionId: string; message: string }> {
+): Promise<{ transactionId?: string; neracaReportId?: string; message: string; type: "transaction" | "neraca_report" }> {
   const result = await runFinancialWrite(async (tx) => {
     const confirmation = await findConfirmationForUpdate(tx, input);
 
     if (confirmation.status === "confirmed") {
+      if (confirmation.type === "neraca_report") {
+        if (!confirmation.resultingNeracaReportId) {
+          throw new InvalidConfirmationStateError("Confirmed request is missing neraca report reference.");
+        }
+
+        return {
+          state: "confirmed" as const,
+          type: "neraca_report" as const,
+          neracaReportId: confirmation.resultingNeracaReportId,
+          message: "Laporan neraca sudah pernah disimpan.",
+        };
+      }
+
       if (!confirmation.resultingTransactionId) {
         throw new InvalidConfirmationStateError("Confirmed request is missing transaction reference.");
       }
 
       return {
         state: "confirmed" as const,
+        type: "transaction" as const,
         transactionId: confirmation.resultingTransactionId,
         message: "Transaksi sudah pernah disimpan.",
       };
@@ -334,6 +412,34 @@ export async function confirmConfirmationRequest(
       await expireConfirmation(tx, confirmation);
       return {
         state: "expired" as const,
+      };
+    }
+
+    if (confirmation.type === "neraca_report") {
+      const payload = parseNeracaPayload(confirmation.proposedActionJson);
+      const report = await createNeracaReportInTransaction(tx, {
+        businessId: input.businessId,
+        userId: input.userId,
+        reportDate: payload.reportDate,
+        confirmationRequestId: confirmation.id,
+      });
+
+      await tx
+        .updateTable("confirmation_requests")
+        .set({
+          status: "confirmed",
+          confirmedAt: new Date(),
+          resultingNeracaReportId: report.id,
+          updatedAt: new Date(),
+        })
+        .where("id", "=", confirmation.id)
+        .executeTakeFirst();
+
+      return {
+        state: "confirmed" as const,
+        type: "neraca_report" as const,
+        neracaReportId: report.id,
+        message: "Laporan neraca berhasil disimpan.",
       };
     }
 
@@ -373,6 +479,7 @@ export async function confirmConfirmationRequest(
 
     return {
       state: "confirmed" as const,
+      type: "transaction" as const,
       transactionId: transaction.id,
       message: "Transaksi berhasil disimpan.",
     };
@@ -383,7 +490,9 @@ export async function confirmConfirmationRequest(
   }
 
   return {
+    type: result.type,
     transactionId: result.transactionId,
+    neracaReportId: result.neracaReportId,
     message: result.message,
   };
 }
@@ -394,6 +503,10 @@ export async function editConfirmationRequest(input: EditConfirmationRequestInpu
 
     if (confirmation.status !== "pending") {
       throw new InvalidConfirmationStateError("Only pending confirmations can be edited.");
+    }
+
+    if (confirmation.type !== "transaction") {
+      throw new InvalidConfirmationStateError("Konfirmasi laporan neraca tidak bisa diedit.");
     }
 
     if (confirmation.expiresAt <= new Date()) {

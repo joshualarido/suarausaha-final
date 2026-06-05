@@ -352,6 +352,7 @@ export async function resolveLiabilityForPayment(
   const normalizedTarget = normalizeTargetName(input.targetName);
   const matches = rows.filter((row) => {
     return (
+      row.id === input.targetName ||
       normalizeTargetName(row.lenderName).includes(normalizedTarget) ||
       normalizeTargetName(row.description ?? "").includes(normalizedTarget)
     );
@@ -367,10 +368,10 @@ export async function resolveLiabilityForPayment(
   return matches[0];
 }
 
-export async function resolveReceivableForPayment(
+export async function resolveReceivablesForPayment(
   tx: FinancialWriteTx,
   input: { businessId: string; targetName: string },
-): Promise<ReceivableRow> {
+): Promise<ReceivableRow[]> {
   const rows = await tx
     .selectFrom("receivables")
     .selectAll()
@@ -380,6 +381,9 @@ export async function resolveReceivableForPayment(
     .execute();
 
   const normalizedTarget = normalizeTargetName(input.targetName);
+  const exactMatches = rows.filter((row) => row.id === input.targetName);
+  if (exactMatches.length > 0) return exactMatches;
+
   const matches = rows.filter((row) => {
     return (
       normalizeTargetName(row.customerName).includes(normalizedTarget) ||
@@ -391,10 +395,13 @@ export async function resolveReceivableForPayment(
     throw new FinancialTargetNotFoundError("Piutang yang dibayar tidak ditemukan. Sebutkan nama pelanggan yang sesuai.");
   }
   if (matches.length > 1) {
-    throw new AmbiguousFinancialTargetError("Ada lebih dari satu piutang yang cocok. Sebutkan target piutang yang lebih spesifik.");
+    const customerNames = [...new Set(matches.map((row) => normalizeTargetName(row.customerName)))];
+    if (customerNames.length > 1) {
+      throw new AmbiguousFinancialTargetError("Ada lebih dari satu piutang yang cocok. Sebutkan target piutang yang lebih spesifik.");
+    }
   }
 
-  return matches[0];
+  return matches;
 }
 
 export async function applyLiabilityPaymentEffect(
@@ -469,4 +476,33 @@ export async function applyReceivablePaymentEffect(
     afterAmount,
     createdAt: input.now,
   });
+}
+
+export async function applyReceivablePaymentEffects(
+  tx: FinancialWriteTx,
+  input: { transaction: TransactionRow; receivables: ReceivableRow[]; amount: bigint; now: Date },
+): Promise<void> {
+  const totalOutstanding = input.receivables.reduce((sum, receivable) => sum + BigInt(receivable.outstandingAmount), 0n);
+  if (input.amount > totalOutstanding) {
+    throw new FinancialTargetOverpaymentError(
+      "Jumlah pembayaran melebihi sisa piutang. Ubah jumlah pembayaran agar tidak lebih dari sisa piutang.",
+    );
+  }
+
+  let remaining = input.amount;
+  for (const receivable of input.receivables) {
+    if (remaining <= 0n) break;
+
+    const outstanding = BigInt(receivable.outstandingAmount);
+    const appliedAmount = remaining > outstanding ? outstanding : remaining;
+    if (appliedAmount > 0n) {
+      await applyReceivablePaymentEffect(tx, {
+        transaction: input.transaction,
+        receivable,
+        amount: appliedAmount,
+        now: input.now,
+      });
+      remaining -= appliedAmount;
+    }
+  }
 }

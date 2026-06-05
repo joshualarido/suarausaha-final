@@ -111,10 +111,12 @@ confirmationRouter.post("/confirmations/:confirmationRequestId/confirm", require
         role: "assistant",
         kind: "system_result",
         confirmationRequestId: getParam(req.params.confirmationRequestId),
-        transactionId: data.transactionId,
+        transactionId: data.transactionId ?? null,
         content: {
           message: data.message,
+          type: data.type,
           transactionId: data.transactionId,
+          neracaReportId: data.neracaReportId,
         },
       });
     });

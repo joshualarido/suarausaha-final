@@ -78,23 +78,27 @@ async function getConfirmedOpeningBalanceByBusinessId(businessId: string): Promi
 }
 
 export async function getInventorySummaryByBusinessId(businessId: string): Promise<InventorySummaryResult> {
-  const [openingBalance, inventoryTotals] = await Promise.all([
+  const [openingBalance, inventoryRows] = await Promise.all([
     getConfirmedOpeningBalanceByBusinessId(businessId),
     db
       .selectFrom("inventory_summaries")
-      .select(({ fn }) => [
-        fn.sum<string>("estimatedValue").as("purchasedValue"),
-        fn.max("lastUpdatedAt").as("lastUpdatedAt"),
-      ])
+      .select(["estimatedValue", "sourceOpeningBalanceId", "lastUpdatedAt"])
       .where("businessId", "=", businessId)
       .where("status", "=", "active")
-      .executeTakeFirst(),
+      .execute(),
   ]);
 
-  const openingValue = toNumber(openingBalance?.inventoryValue ?? 0);
-  const purchasedValue = toNumber(inventoryTotals?.purchasedValue ?? 0);
+  const openingRows = inventoryRows.filter((row) => row.sourceOpeningBalanceId);
+  const transactionRows = inventoryRows.filter((row) => !row.sourceOpeningBalanceId);
+  const openingValue = openingRows.length
+    ? openingRows.reduce((sum, row) => sum + toNumber(row.estimatedValue), 0)
+    : toNumber(openingBalance?.inventoryValue ?? 0);
+  const purchasedValue = transactionRows.reduce((sum, row) => sum + toNumber(row.estimatedValue), 0);
   const openingUpdatedAt = normalizeDate(openingBalance?.confirmedAt ?? null);
-  const transactionUpdatedAt = normalizeDate(inventoryTotals?.lastUpdatedAt ?? null);
+  const transactionUpdatedAt = inventoryRows
+    .map((row) => normalizeDate(row.lastUpdatedAt))
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
   const lastUpdatedAt =
     openingUpdatedAt && transactionUpdatedAt
@@ -122,6 +126,7 @@ export async function getAssetSummaryByBusinessId(businessId: string): Promise<A
         "name",
         "value",
         "recordedDate",
+        "sourceOpeningBalanceId",
         "sourceTransactionId",
       ])
       .where("businessId", "=", businessId)
@@ -137,12 +142,17 @@ export async function getAssetSummaryByBusinessId(businessId: string): Promise<A
       name: row.name,
       value: toNumber(row.value),
       recordedDate: row.recordedDate,
-      sourceTransactionId: row.sourceTransactionId ?? "unknown",
+      sourceTransactionId: row.sourceOpeningBalanceId ? "opening-balance" : row.sourceTransactionId ?? "unknown",
     };
   });
 
-  const openingValue = toNumber(openingBalance?.assetValue ?? 0);
-  const purchasedOrRecordedValue = items.reduce((total, item) => total + item.value, 0);
+  const openingRows = assetRows.filter((row) => row.sourceOpeningBalanceId);
+  const openingValue = openingRows.length
+    ? openingRows.reduce((total, item) => total + toNumber(item.value), 0)
+    : toNumber(openingBalance?.assetValue ?? 0);
+  const purchasedOrRecordedValue = assetRows
+    .filter((row) => !row.sourceOpeningBalanceId)
+    .reduce((total, item) => total + toNumber(item.value), 0);
 
   return {
     totalAssetValue: openingValue + purchasedOrRecordedValue,
@@ -164,6 +174,7 @@ export async function getLiabilitySummaryByBusinessId(businessId: string): Promi
         "outstandingAmount",
         "status",
         "createdDate",
+        "sourceOpeningBalanceId",
         "sourceTransactionId",
       ])
       .where("businessId", "=", businessId)
@@ -180,11 +191,12 @@ export async function getLiabilitySummaryByBusinessId(businessId: string): Promi
     outstandingAmount: toNumber(row.outstandingAmount),
     status: row.status,
     createdDate: row.createdDate,
-    sourceTransactionId: row.sourceTransactionId ?? "unknown",
+    sourceTransactionId: row.sourceOpeningBalanceId ? "opening-balance" : row.sourceTransactionId ?? "unknown",
   }));
 
   const openingDebtValue = toNumber(openingBalance?.debtValue ?? 0);
-  if (openingDebtValue > 0) {
+  const hasOpeningRows = liabilityRows.some((row) => row.sourceOpeningBalanceId);
+  if (!hasOpeningRows && openingDebtValue > 0) {
     const openingDate = openingBalance?.confirmedAt?.toISOString().slice(0, 10) ?? new Date().toISOString().slice(0, 10);
     items.push({
       id: "liability-opening-balance",
@@ -218,6 +230,7 @@ export async function getReceivableSummaryByBusinessId(businessId: string): Prom
         "outstandingAmount",
         "status",
         "createdDate",
+        "sourceOpeningBalanceId",
         "sourceTransactionId",
       ])
       .where("businessId", "=", businessId)
@@ -236,11 +249,12 @@ export async function getReceivableSummaryByBusinessId(businessId: string): Prom
     remainingAmount: toNumber(row.outstandingAmount),
     status: row.status,
     createdDate: row.createdDate,
-    sourceTransactionId: row.sourceTransactionId ?? "unknown",
+    sourceTransactionId: row.sourceOpeningBalanceId ? "opening-balance" : row.sourceTransactionId ?? "unknown",
   }));
 
   const openingReceivableValue = toNumber(openingBalance?.receivableValue ?? 0);
-  if (openingReceivableValue > 0) {
+  const hasOpeningRows = receivableRows.some((row) => row.sourceOpeningBalanceId);
+  if (!hasOpeningRows && openingReceivableValue > 0) {
     const openingDate = openingBalance?.confirmedAt?.toISOString().slice(0, 10) ?? new Date().toISOString().slice(0, 10);
     items.push({
       id: "receivable-opening-balance",

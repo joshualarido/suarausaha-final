@@ -10,7 +10,7 @@ import {
   toOpeningBalanceResponse,
 } from "./opening-balance.service.js";
 
-const openingBalancePayloadSchema = z.object({
+const aggregateOpeningBalancePayloadSchema = z.object({
   cashBalance: z.number().int().min(0),
   nonCashBalance: z.number().int().min(0).default(0),
   inventoryValue: z.number().int().min(0),
@@ -18,6 +18,35 @@ const openingBalancePayloadSchema = z.object({
   debtValue: z.number().int().min(0),
   receivableValue: z.number().int().min(0),
 });
+
+const itemizedOpeningBalancePayloadSchema = z
+  .object({
+    paymentAccounts: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1),
+          type: z.enum(["cash", "non_cash"]),
+          openingBalance: z.number().int().min(0),
+        }),
+      )
+      .min(1),
+    inventoryItems: z.array(z.object({ name: z.string().trim().optional(), value: z.number().int().min(0) })).max(1),
+    assetItems: z.array(z.object({ name: z.string().trim().min(1), value: z.number().int().min(0) })),
+    liabilityItems: z.array(z.object({ lenderName: z.string().trim().min(1), amount: z.number().int().min(0) })),
+    receivableItems: z.array(z.object({ customerName: z.string().trim().min(1), amount: z.number().int().min(0) })),
+  })
+  .superRefine((value, ctx) => {
+    const cashAccounts = value.paymentAccounts.filter((account) => account.type === "cash");
+    if (cashAccounts.length !== 1 || cashAccounts[0]?.name !== "Kas") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["paymentAccounts"],
+        message: "Opening balance must include exactly one cash account named Kas.",
+      });
+    }
+  });
+
+const openingBalancePayloadSchema = z.union([aggregateOpeningBalancePayloadSchema, itemizedOpeningBalancePayloadSchema]);
 
 const openingBalanceRouter = Router();
 

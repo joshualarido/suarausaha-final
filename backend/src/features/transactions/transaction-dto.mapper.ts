@@ -56,10 +56,15 @@ export function toTransactionHistoryStatus(
 }
 
 export function toConfirmationResponseDto(confirmation: ConfirmationRequestRow) {
+  const proposedPayload = parseJsonObject(confirmation.proposedActionJson);
+  const isNeracaReport = confirmation.type === "neraca_report";
+
   return {
     id: confirmation.id,
+    type: confirmation.type,
     status: confirmation.status,
-    proposedAction: parseProposedActionJson(confirmation.proposedActionJson),
+    proposedAction: isNeracaReport ? null : parseProposedActionJson(confirmation.proposedActionJson),
+    proposedNeracaReport: isNeracaReport ? proposedPayload : null,
     summaryText: confirmation.summaryText,
     warningText: confirmation.warningText,
     expectedEffects: parseJsonStringArray(confirmation.expectedEffectsJson),
@@ -67,5 +72,6 @@ export function toConfirmationResponseDto(confirmation: ConfirmationRequestRow) 
     confirmedAt: confirmation.confirmedAt,
     cancelledAt: confirmation.cancelledAt,
     resultingTransactionId: confirmation.resultingTransactionId,
+    resultingNeracaReportId: confirmation.resultingNeracaReportId,
   };
 }

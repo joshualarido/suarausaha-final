@@ -170,9 +170,26 @@ export async function ensureDatabaseSchema(): Promise<void> {
         "confirmedAt" timestamptz,
         "cancelledAt" timestamptz,
         "resultingTransactionId" text,
+        "resultingNeracaReportId" text,
         "createdAt" timestamptz NOT NULL DEFAULT now(),
         "updatedAt" timestamptz NOT NULL DEFAULT now()
       );
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE "confirmation_requests"
+      DROP CONSTRAINT IF EXISTS "confirmation_requests_type_check";
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE "confirmation_requests"
+      ADD CONSTRAINT "confirmation_requests_type_check"
+      CHECK ("type" IN ('transaction', 'neraca_report'));
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE "confirmation_requests"
+      ADD COLUMN IF NOT EXISTS "resultingNeracaReportId" text;
     `.execute(db);
 
     await sql`
@@ -328,6 +345,44 @@ export async function ensureDatabaseSchema(): Promise<void> {
         "createdBy" text NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT,
         UNIQUE ("originalTransactionId")
       );
+    `.execute(db);
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS "neraca_reports" (
+        "id" text PRIMARY KEY,
+        "businessId" text NOT NULL REFERENCES "business"("id") ON DELETE CASCADE,
+        "confirmationRequestId" text REFERENCES "confirmation_requests"("id") ON DELETE SET NULL,
+        "reportDate" date NOT NULL,
+        "generatedAt" timestamptz NOT NULL DEFAULT now(),
+        "generatedBy" text NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT,
+        "totalAktiva" bigint NOT NULL,
+        "totalPasiva" bigint NOT NULL,
+        "totalUtang" bigint NOT NULL,
+        "totalEkuitas" bigint NOT NULL,
+        "reconciliationStatus" text NOT NULL CHECK ("reconciliationStatus" IN ('seimbang', 'tidak_seimbang')),
+        "difference" bigint NOT NULL,
+        "cash" bigint NOT NULL,
+        "nonCash" bigint NOT NULL,
+        "receivable" bigint NOT NULL,
+        "inventory" bigint NOT NULL,
+        "asset" bigint NOT NULL,
+        "debt" bigint NOT NULL,
+        "openingEquity" bigint NOT NULL,
+        "ownerCapital" bigint NOT NULL,
+        "ownerWithdrawal" bigint NOT NULL,
+        "income" bigint NOT NULL,
+        "expense" bigint NOT NULL,
+        "runningProfit" bigint NOT NULL,
+        "warningText" text,
+        "assumptionsJson" jsonb NOT NULL DEFAULT '[]'::jsonb,
+        "snapshotJson" jsonb NOT NULL,
+        "createdAt" timestamptz NOT NULL DEFAULT now()
+      );
+    `.execute(db);
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS "neraca_reports_business_report_date_idx"
+      ON "neraca_reports" ("businessId", "reportDate" DESC, "generatedAt" DESC);
     `.execute(db);
 
     schemaEnsured = true;

@@ -83,6 +83,7 @@ export type ParseIntentResult =
       parserModel: string;
       parserVersion: string;
       structuredPayload: ProposedAction;
+      requiresConfirmationReason?: "clarified_ambiguity";
     }
   | {
       status: "needs_clarification";

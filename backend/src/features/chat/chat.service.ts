@@ -4,12 +4,15 @@ import { runFinancialWrite, type FinancialWriteTx } from "../../lib/financial-wr
 import {
   cancelPendingConfirmationsInTransaction,
   createConfirmationRequest,
+  createNeracaConfirmationRequest,
   toConfirmationResponse,
 } from "../confirmations/confirmation.service.js";
+import { previewNeraca, type NeracaSnapshotData } from "../neraca/neraca.service.js";
 import { listActiveMenuItemsByBusinessId } from "../menu-items/menu-item.service.js";
 import { listPaymentAccountsByBusinessId } from "../payment-accounts/payment-account.service.js";
 import { parserEngine } from "../parser/parser-engine.service.js";
 import type { ParseIntentInput, ParseIntentResult, ProposedAction } from "../parser/parser.types.js";
+import { createInventoryOrExpenseClarification, resolveInventoryOrExpenseClarification } from "../parser/ambiguity.service.js";
 import {
   AmbiguousFinancialTargetError,
   createBaseTransactionInTransaction,
@@ -43,7 +46,8 @@ export type ChatParseResponse =
   | {
       status: "requires_confirmation";
       confirmationRequestId: string;
-      proposedAction: ProposedAction;
+      proposedAction?: ProposedAction;
+      proposedNeracaReport?: NeracaSnapshotData;
       confirmation: ReturnType<typeof toConfirmationResponse>;
     }
   | {
@@ -95,8 +99,17 @@ function isUndoIntentCommand(message: string): boolean {
   );
 }
 
+function isNeracaIntentCommand(message: string): boolean {
+  const normalized = normalizeInput(message).toLowerCase();
+  return /\b(neraca|laporan\s+neraca|laporan\s+posisi)\b/.test(normalized) && /\b(buat|generate|tampilkan|lihat|cetak)\b/.test(normalized);
+}
+
 function isAutoWriteIntent(intent: ProposedAction["intent"]): boolean {
   return AUTO_WRITE_INTENTS.has(intent);
+}
+
+function requiresConfirmation(parserResult: Extract<ParseIntentResult, { status: "parsed" }>): boolean {
+  return parserResult.requiresConfirmationReason === "clarified_ambiguity";
 }
 
 function createLowConfidenceClarificationMessage(): string {
@@ -299,6 +312,89 @@ function parsedCommandValues(input: ParseChatMessageInput, parserResult: ParseIn
   };
 }
 
+function neracaParsedCommandValues(input: ParseChatMessageInput, reportDate: string, preview: NeracaSnapshotData) {
+  const now = new Date();
+  return {
+    id: randomUUID(),
+    businessId: input.businessId,
+    userId: input.userId,
+    rawInputText: input.message,
+    normalizedInputText: normalizeInput(input.message),
+    source: "text" as const,
+    detectedIntent: "generate_neraca",
+    parserModel: "deterministic-system",
+    parserVersion: "neraca-command-v1",
+    confidence: "1",
+    structuredPayload: JSON.stringify({
+      detectedIntent: "generate_neraca",
+      reportDate,
+      preview,
+    }),
+    missingFields: JSON.stringify([]),
+    validationErrors: JSON.stringify([]),
+    status: "parsed" as const,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function handleNeracaIntent(input: ParseChatMessageInput): Promise<ChatParseResponse> {
+  const reportDate = todayIso();
+  const preview = await previewNeraca({
+    businessId: input.businessId,
+    userId: input.userId,
+    reportDate,
+  });
+
+  return runFinancialWrite(async (tx) => {
+    await appendChatMessage(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      role: "user",
+      kind: "text",
+      content: {
+        text: input.message,
+      },
+    });
+
+    const parsedCommand = await tx
+      .insertInto("parsed_commands")
+      .values(neracaParsedCommandValues(input, reportDate, preview))
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const confirmation = await createNeracaConfirmationRequest(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      parsedCommandId: parsedCommand.id,
+      reportDate,
+      preview,
+    });
+
+    await appendChatMessage(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      role: "assistant",
+      kind: "confirmation_card",
+      parsedCommandId: parsedCommand.id,
+      confirmationRequestId: confirmation.id,
+      content: {
+        status: "requires_confirmation",
+        confirmationRequestId: confirmation.id,
+        proposedNeracaReport: preview,
+        confirmation: toConfirmationResponse(confirmation),
+      },
+    });
+
+    return {
+      status: "requires_confirmation",
+      confirmationRequestId: confirmation.id,
+      proposedNeracaReport: preview,
+      confirmation: toConfirmationResponse(confirmation),
+    };
+  });
+}
+
 async function createParserInput(
   input: ParseChatMessageInput,
   clarification?: ParseIntentInput["clarification"],
@@ -470,7 +566,12 @@ export async function parseChatMessage(input: ParseChatMessageInput): Promise<Ch
     return handleUndoIntent(input);
   }
 
-  const parserResult = await parserEngine.parse(await createParserInput(input));
+  if (isNeracaIntentCommand(input.message)) {
+    return handleNeracaIntent(input);
+  }
+
+  const parserInput = await createParserInput(input);
+  const parserResult = createInventoryOrExpenseClarification(parserInput) ?? (await parserEngine.parse(parserInput));
 
   return runFinancialWrite(async (tx) => {
     await appendChatMessage(tx, {
@@ -514,7 +615,7 @@ export async function parseChatMessage(input: ParseChatMessageInput): Promise<Ch
       };
     }
 
-    if (isAutoWriteIntent(parserResult.proposedAction.intent) && parserResult.confidence < AUTO_WRITE_MIN_CONFIDENCE) {
+    if (!requiresConfirmation(parserResult) && isAutoWriteIntent(parserResult.proposedAction.intent) && parserResult.confidence < AUTO_WRITE_MIN_CONFIDENCE) {
       return createClarificationResult({
         tx,
         businessId: input.businessId,
@@ -527,7 +628,7 @@ export async function parseChatMessage(input: ParseChatMessageInput): Promise<Ch
       });
     }
 
-    if (isAutoWriteIntent(parserResult.proposedAction.intent)) {
+    if (!requiresConfirmation(parserResult) && isAutoWriteIntent(parserResult.proposedAction.intent)) {
       return autoSaveParsedAction({
         tx,
         businessId: input.businessId,
@@ -599,20 +700,19 @@ export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promis
   }
 
   const payload = readStructuredPayload(command);
-  const parserResult = await parserEngine.parse(
-    await createParserInput(
-      {
-        businessId: input.businessId,
-        userId: input.userId,
-        message: command.rawInputText,
-      },
-      {
-        originalMessage: command.rawInputText,
-        previousPayload: payload,
-        answer: input.answer,
-      },
-    ),
+  const parserInput = await createParserInput(
+    {
+      businessId: input.businessId,
+      userId: input.userId,
+      message: command.rawInputText,
+    },
+    {
+      originalMessage: command.rawInputText,
+      previousPayload: payload,
+      answer: input.answer,
+    },
   );
+  const parserResult = resolveInventoryOrExpenseClarification(parserInput) ?? (await parserEngine.parse(parserInput));
 
   return runFinancialWrite(async (tx) => {
     await appendChatMessage(tx, {
@@ -664,7 +764,7 @@ export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promis
       };
     }
 
-    if (isAutoWriteIntent(parserResult.proposedAction.intent) && parserResult.confidence < AUTO_WRITE_MIN_CONFIDENCE) {
+    if (!requiresConfirmation(parserResult) && isAutoWriteIntent(parserResult.proposedAction.intent) && parserResult.confidence < AUTO_WRITE_MIN_CONFIDENCE) {
       return createClarificationResult({
         tx,
         businessId: input.businessId,
@@ -690,7 +790,7 @@ export async function clarifyChatMessage(input: ClarifyChatMessageInput): Promis
       .where("id", "=", command.id)
       .executeTakeFirst();
 
-    if (isAutoWriteIntent(parserResult.proposedAction.intent)) {
+    if (!requiresConfirmation(parserResult) && isAutoWriteIntent(parserResult.proposedAction.intent)) {
       return autoSaveParsedAction({
         tx,
         businessId: input.businessId,

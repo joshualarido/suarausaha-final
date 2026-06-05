@@ -3,6 +3,7 @@ import { supportedIntentSchema } from "./gemini-parser.types.js";
 import { intentOptions } from "./intent-catalog.js";
 import type { ParseIntentInput, ParseIntentResult, ProposedAction } from "./parser.types.js";
 import { proposedActionSchema } from "./parser.types.js";
+import { createInventoryOrExpenseClarification } from "./ambiguity.service.js";
 
 const PARSER_VERSION = "gemini-engine-v1";
 const LOW_CONFIDENCE_THRESHOLD = 0.5;
@@ -104,6 +105,7 @@ function findLiabilityMatches(input: ParseIntentInput, target: string) {
 
   return openLiabilities.filter(
     (item) =>
+      item.id === target ||
       normalize(item.lenderName).includes(normalizedTarget) ||
       normalize(item.description ?? "").includes(normalizedTarget),
   );
@@ -115,6 +117,7 @@ function findReceivableMatches(input: ParseIntentInput, target: string) {
 
   return openReceivables.filter(
     (item) =>
+      item.id === target ||
       normalize(item.customerName).includes(normalizedTarget) ||
       normalize(item.description ?? "").includes(normalizedTarget),
   );
@@ -136,11 +139,11 @@ function effectsFor(action: Omit<ProposedAction, "expectedEffects" | "warning">)
     case "liability_created":
       return [`Utang bertambah ${amount}`, `Aktiva atau biaya terkait bertambah ${amount}`];
     case "liability_payment":
-      return [`${accountName} berkurang ${amount}`, `Utang berkurang ${amount}`];
+      return [`${accountName} berkurang ${amount}`, `Utang ${action.affectedObject ?? ""}`.trim() + ` berkurang ${amount}`];
     case "receivable_created":
       return [`Piutang bertambah ${amount}`, `Pendapatan bertambah ${amount}`];
     case "receivable_payment":
-      return [`${accountName} bertambah ${amount}`, `Piutang berkurang ${amount}`];
+      return [`${accountName} bertambah ${amount}`, `Piutang ${action.affectedObject ?? ""}`.trim() + ` berkurang ${amount}`];
     case "owner_withdrawal":
       return [`${accountName} berkurang ${amount}`, `Prive bertambah ${amount}`];
     case "reversal":
@@ -178,6 +181,9 @@ export function validateParserDraft(
   draft: GeminiParserDraft,
   parserModel: string,
 ): ParseIntentResult {
+  const ambiguityResult = createInventoryOrExpenseClarification(input);
+  if (ambiguityResult) return ambiguityResult;
+
   if (draft.multipleEvents) {
     return clarificationResult({
       draft,
@@ -359,13 +365,16 @@ export function validateParserDraft(
       }
 
       if (matches.length > 1) {
-        return clarificationResult({
-          draft,
-          parserModel,
-          missingFields: compactUnique([...missingFields, "affectedObject"]),
-          validationErrors,
-          question: "Ada lebih dari satu piutang yang mirip. Sebutkan nama pelanggan lebih spesifik.",
-        });
+        const customerNames = compactUnique(matches.map((match) => normalize(match.customerName)));
+        if (customerNames.length > 1) {
+          return clarificationResult({
+            draft,
+            parserModel,
+            missingFields: compactUnique([...missingFields, "affectedObject"]),
+            validationErrors,
+            question: "Ada lebih dari satu piutang yang mirip. Sebutkan nama pelanggan lebih spesifik.",
+          });
+        }
       }
 
       normalizedAffectedObject = matches[0].customerName;
@@ -407,7 +416,9 @@ export function validateParserDraft(
   }
 
   const warning =
-    assumptionNotes.length > 0
+    actionBase.intent === "receivable_payment"
+      ? "Ini tidak menambah pendapatan lagi."
+      : assumptionNotes.length > 0
       ? `Asumsi parser: ${assumptionNotes.join("; ")}. Periksa lagi sebelum disimpan.`
       : null;
 

@@ -12,6 +12,7 @@ import {
 import { intentOptions } from "./intent-catalog.js";
 import type { IntentParser, ParseIntentInput, ParseIntentResult } from "./parser.types.js";
 import { validateParserDraft } from "./parser-validator.service.js";
+import { createInventoryOrExpenseClarification } from "./ambiguity.service.js";
 
 function safeClarificationResult(
   input: ParseIntentInput,
@@ -38,6 +39,11 @@ function safeClarificationResult(
 export function createParserEngine(draftParser: GeminiDraftParser = geminiDraftParser): IntentParser {
   return {
     async parse(input) {
+      if (!input.clarification) {
+        const ambiguityResult = createInventoryOrExpenseClarification(input);
+        if (ambiguityResult) return ambiguityResult;
+      }
+
       if (env.PARSER_ENGINE === "deterministic") {
         return deterministicIntentParser.parse(input);
       }

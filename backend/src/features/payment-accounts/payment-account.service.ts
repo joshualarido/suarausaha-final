@@ -49,6 +49,12 @@ interface SeedDefaultPaymentAccountsResult {
   cashAccountId: string;
 }
 
+export interface OpeningPaymentAccountInput {
+  name: string;
+  type: "cash" | "non_cash";
+  openingBalance: bigint;
+}
+
 interface EnsureDefaultPaymentAccountsInput {
   businessId: string;
 }
@@ -129,6 +135,66 @@ export async function seedDefaultPaymentAccounts(
   return {
     cashAccountId: accountIds.cashAccountId,
   };
+}
+
+export async function seedOpeningPaymentAccounts(
+  tx: FinancialWriteTx,
+  input: {
+    businessId: string;
+    paymentAccounts: OpeningPaymentAccountInput[];
+  },
+): Promise<void> {
+  const now = new Date();
+  const existing = await tx
+    .selectFrom("payment_accounts")
+    .selectAll()
+    .where("businessId", "=", input.businessId)
+    .execute();
+
+  await tx
+    .updateTable("payment_accounts")
+    .set({
+      isDefault: false,
+      updatedAt: now,
+    })
+    .where("businessId", "=", input.businessId)
+    .executeTakeFirst();
+
+  for (const account of input.paymentAccounts) {
+    const current = existing.find((row) => row.name.toLowerCase() === account.name.toLowerCase());
+    const isDefaultCash = account.type === "cash";
+
+    if (current) {
+      await tx
+        .updateTable("payment_accounts")
+        .set({
+          name: account.name,
+          type: account.type,
+          currentBalance: account.openingBalance.toString(),
+          isDefault: isDefaultCash,
+          status: "active",
+          updatedAt: now,
+        })
+        .where("id", "=", current.id)
+        .executeTakeFirst();
+      continue;
+    }
+
+    await tx
+      .insertInto("payment_accounts")
+      .values({
+        id: randomUUID(),
+        businessId: input.businessId,
+        name: account.name,
+        type: account.type,
+        currentBalance: account.openingBalance.toString(),
+        isDefault: isDefaultCash,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .executeTakeFirst();
+  }
 }
 
 export async function updatePaymentAccountNameForBusiness(

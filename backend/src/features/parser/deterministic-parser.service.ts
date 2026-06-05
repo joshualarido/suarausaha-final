@@ -5,6 +5,7 @@ import type {
   ParserMenuItemContext,
   ProposedAction,
 } from "./parser.types.js";
+import { createInventoryOrExpenseClarification } from "./ambiguity.service.js";
 
 const PARSER_MODEL = "deterministic-output";
 const PARSER_VERSION = "phase-2-v1";
@@ -162,6 +163,9 @@ function classifyIntent(message: string): ProposedAction["intent"] | "ambiguous_
 export function createDeterministicIntentParser(): IntentParser {
   return {
     async parse(input: ParseIntentInput): Promise<ParseIntentResult> {
+      const ambiguityResult = createInventoryOrExpenseClarification(input);
+      if (ambiguityResult) return ambiguityResult;
+
       const intent = classifyIntent(input.message);
       const matchingMenuItems = intent === "sales_income" ? findMatchingMenuItems(input.message, input.menuItems) : [];
 

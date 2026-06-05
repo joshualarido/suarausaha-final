@@ -66,6 +66,7 @@ function buildPrompt(input: ParseIntentInput): string {
       "Do not invent missing financial values.",
       "Use null for unknown fields.",
       "Amounts must be IDR integer values, not formatted strings.",
+        "If a purchase could be either stock/inventory or direct expense, do not choose expense or inventory directly; set detectedIntent null, include missingFields ['intent'], and ask whether it is stok/persediaan or biaya langsung.",
         "If the transaction type is reasonably clear, choose exactly one supported detectedIntent.",
         "If the transaction type is unclear, set detectedIntent null, include missingFields ['intent'], and ask the user to choose a supported intent.",
         "If required data is missing for a clear intent, keep detectedIntent and ask only for the missing detail.",
@@ -78,6 +79,7 @@ function buildPrompt(input: ParseIntentInput): string {
     intentCatalog: SUPPORTED_INTENT_CATALOG,
     clarificationRules: [
       "If the transaction type is unclear, ask: Transaksi ini paling cocok dicatat sebagai apa?",
+      "If a purchase is ambiguous between stock/inventory and direct expense, ask: Ini mau dicatat sebagai stok/persediaan atau sebagai biaya langsung?",
       "If the intent is clear but amount is missing, ask: Berapa nominalnya?",
       "If the payment account is missing or ambiguous, ask which payment account was used.",
       "If there are multiple business events, ask the user to enter one transaction at a time.",

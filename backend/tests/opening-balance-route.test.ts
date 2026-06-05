@@ -99,6 +99,75 @@ describe("opening balance routes", () => {
     expect(response.body.data.openingEquity).toBe(2_550_000);
   });
 
+  it("returns opening balance preview from itemized rows", async () => {
+    vi.mocked(previewOpeningBalance).mockReturnValue({
+      cashBalance: 1_000_000,
+      nonCashBalance: 500_000,
+      inventoryValue: 300_000,
+      assetValue: 2_000_000,
+      debtValue: 700_000,
+      receivableValue: 200_000,
+      openingAssets: 4_000_000,
+      openingLiabilities: 700_000,
+      openingEquity: 3_300_000,
+    });
+
+    const response = await request(app).post("/api/v1/opening-balance/preview").send({
+      paymentAccounts: [
+        { name: "Kas", type: "cash", openingBalance: 1_000_000 },
+        { name: "Bank BCA", type: "non_cash", openingBalance: 300_000 },
+        { name: "QRIS", type: "non_cash", openingBalance: 200_000 },
+      ],
+      inventoryItems: [{ value: 300_000 }],
+      assetItems: [{ name: "Peralatan awal", value: 2_000_000 }],
+      liabilityItems: [{ lenderName: "Supplier ayam", amount: 700_000 }],
+      receivableItems: [{ customerName: "Budi", amount: 200_000 }],
+    });
+
+    expect(response.status).toBe(200);
+    expect(previewOpeningBalance).toHaveBeenCalledWith({
+      paymentAccounts: [
+        { name: "Kas", type: "cash", openingBalance: 1_000_000 },
+        { name: "Bank BCA", type: "non_cash", openingBalance: 300_000 },
+        { name: "QRIS", type: "non_cash", openingBalance: 200_000 },
+      ],
+      inventoryItems: [{ value: 300_000 }],
+      assetItems: [{ name: "Peralatan awal", value: 2_000_000 }],
+      liabilityItems: [{ lenderName: "Supplier ayam", amount: 700_000 }],
+      receivableItems: [{ customerName: "Budi", amount: 200_000 }],
+    });
+    expect(response.body.data.openingEquity).toBe(3_300_000);
+  });
+
+  it("rejects itemized opening balance rows with missing names", async () => {
+    const response = await request(app).post("/api/v1/opening-balance/preview").send({
+      paymentAccounts: [{ name: "Kas", type: "cash", openingBalance: 1_000_000 }],
+      inventoryItems: [{ value: 300_000 }],
+      assetItems: [{ name: "", value: 2_000_000 }],
+      liabilityItems: [],
+      receivableItems: [],
+    });
+
+    expect(response.status).toBe(400);
+    expect(previewOpeningBalance).not.toHaveBeenCalled();
+  });
+
+  it("rejects multiple opening inventory estimate rows", async () => {
+    const response = await request(app).post("/api/v1/opening-balance/preview").send({
+      paymentAccounts: [{ name: "Kas", type: "cash", openingBalance: 1_000_000 }],
+      inventoryItems: [
+        { value: 300_000 },
+        { value: 100_000 },
+      ],
+      assetItems: [],
+      liabilityItems: [],
+      receivableItems: [],
+    });
+
+    expect(response.status).toBe(400);
+    expect(previewOpeningBalance).not.toHaveBeenCalled();
+  });
+
   it("confirms opening balance once", async () => {
     vi.mocked(findBusinessByOwnerId).mockResolvedValue({
       id: "biz_123",
@@ -132,6 +201,40 @@ describe("opening balance routes", () => {
         openingEquity: 3_550_000,
       },
     });
+  });
+
+  it("confirms itemized opening balance once", async () => {
+    vi.mocked(findBusinessByOwnerId).mockResolvedValue({
+      id: "biz_123",
+      ownerId: "user_123",
+      name: "Warung Test",
+      currency: "IDR",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+
+    vi.mocked(confirmOpeningBalance).mockResolvedValue({
+      id: "opening_123",
+      openingEquity: "3300000",
+      confirmedAt: new Date("2026-05-12T10:00:00Z"),
+    } as never);
+
+    const payload = {
+      paymentAccounts: [
+        { name: "Kas", type: "cash", openingBalance: 1_000_000 },
+        { name: "Bank BCA", type: "non_cash", openingBalance: 500_000 },
+      ],
+      inventoryItems: [{ value: 300_000 }],
+      assetItems: [{ name: "Peralatan awal", value: 2_000_000 }],
+      liabilityItems: [{ lenderName: "Supplier ayam", amount: 700_000 }],
+      receivableItems: [{ customerName: "Budi", amount: 200_000 }],
+    };
+
+    const response = await request(app).post("/api/v1/opening-balance/confirm").send(payload);
+
+    expect(response.status).toBe(201);
+    expect(confirmOpeningBalance).toHaveBeenCalledWith("biz_123", payload);
+    expect(response.body.data.openingEquity).toBe(3_300_000);
   });
 
   it("rejects reconfirming opening balance", async () => {

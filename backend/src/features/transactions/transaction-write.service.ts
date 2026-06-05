@@ -10,7 +10,7 @@ import {
 import {
   applyLiabilityPaymentEffect,
   applyPaymentAccountEffect,
-  applyReceivablePaymentEffect,
+  applyReceivablePaymentEffects,
   createAssetRecord,
   createInventoryRecord,
   createLiabilityRecord,
@@ -18,10 +18,50 @@ import {
   getPaymentAccountForUpdate,
   insertIncomeOrExpenseEffect,
   resolveLiabilityForPayment,
-  resolveReceivableForPayment,
+  resolveReceivablesForPayment,
   validatePaymentAccountAvailability,
 } from "./transaction-effects.service.js";
 import { createReversalTransactionInTransaction } from "./reversal.service.js";
+import { FinancialTargetNotFoundError, normalizeTargetName } from "./transaction-types.js";
+
+function parseMenuAliases(aliases: unknown): string[] {
+  if (Array.isArray(aliases)) return aliases.filter((alias): alias is string => typeof alias === "string");
+  if (typeof aliases !== "string") return [];
+
+  try {
+    const parsed = JSON.parse(aliases) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((alias): alias is string => typeof alias === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function validateSalesCatalogItem(tx: FinancialWriteTx, input: CreateBaseTransactionInput): Promise<void> {
+  if (input.type !== "sales_income") return;
+
+  const targetName = input.affectedObject?.trim();
+  if (!targetName) {
+    throw new FinancialTargetNotFoundError("Menu yang dijual harus dipilih dari katalog.");
+  }
+
+  const menuItems = await tx
+    .selectFrom("menu_items")
+    .select(["name", "aliases"])
+    .where("businessId", "=", input.businessId)
+    .where("status", "=", "active")
+    .execute();
+
+  const normalizedTarget = normalizeTargetName(targetName);
+  const matched = menuItems.some((item) => {
+    const aliases = parseMenuAliases(item.aliases);
+    const candidates = [item.name, ...aliases].map(normalizeTargetName);
+    return candidates.includes(normalizedTarget);
+  });
+
+  if (!matched) {
+    throw new FinancialTargetNotFoundError("Menu yang dijual belum ada di katalog. Buat menu dulu di Katalog, lalu catat penjualan lagi.");
+  }
+}
 
 export async function createBaseTransactionInTransaction(
   tx: FinancialWriteTx,
@@ -37,6 +77,7 @@ export async function createBaseTransactionInTransaction(
   const amount = BigInt(input.amount);
   const paymentAccount = await getPaymentAccountForUpdate(tx, input);
   validatePaymentAccountAvailability(input.type, amount, paymentAccount);
+  await validateSalesCatalogItem(tx, input);
   const targetName = input.affectedObject?.trim();
   const liabilityForPayment =
     input.type === "liability_payment"
@@ -45,9 +86,9 @@ export async function createBaseTransactionInTransaction(
           targetName: requireAffectedObject(input, "Utang yang mau dibayar harus disebutkan."),
         })
       : null;
-  const receivableForPayment =
+  const receivablesForPayment =
     input.type === "receivable_payment"
-      ? await resolveReceivableForPayment(tx, {
+      ? await resolveReceivablesForPayment(tx, {
           businessId: input.businessId,
           targetName: requireAffectedObject(input, "Piutang yang dibayar harus disebutkan."),
         })
@@ -176,9 +217,9 @@ export async function createBaseTransactionInTransaction(
         effectType: "payment_account_balance",
         now,
       });
-      await applyReceivablePaymentEffect(tx, {
+      await applyReceivablePaymentEffects(tx, {
         transaction,
-        receivable: receivableForPayment!,
+        receivables: receivablesForPayment!,
         amount,
         now,
       });

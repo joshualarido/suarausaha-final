@@ -174,4 +174,26 @@ describe("deterministic intent parser", () => {
       paymentAccountName: "Kas",
     });
   });
+
+  it("asks whether an ambiguous bahan purchase is inventory or direct expense", async () => {
+    const parser = createDeterministicIntentParser();
+
+    const result = await parser.parse({
+      message: "beli bahan masak 50 ribu pakai kas tanggal 4 Juni 2026",
+      businessId: "biz_123",
+      userId: "user_123",
+      today: "2026-06-05",
+      defaultPaymentAccountId: "acct_cash",
+      defaultPaymentAccountName: "Kas",
+      paymentAccounts: [{ id: "acct_cash", name: "Kas", type: "cash", isDefault: true }],
+      menuItems: [],
+    });
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.question).toBe("Ini mau dicatat sebagai stok/persediaan atau sebagai biaya langsung?");
+    expect(result.options).toEqual([
+      { label: "Stok / Persediaan", value: "inventory_purchase_value" },
+      { label: "Biaya langsung", value: "general_expense" },
+    ]);
+  });
 });
