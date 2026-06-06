@@ -33,14 +33,24 @@ function isValidDate(value: string): boolean {
 function parsePaymentHint(message: string): "cash" | "non_cash" | null {
   const normalized = normalize(message);
   if (/\b(tunai|kas|cash)\b/.test(normalized)) return "cash";
-  if (/\b(transfer|qris|debit|bank|ewallet|e-wallet)\b/.test(normalized)) return "non_cash";
+  if (/\b(transfer|qris|debit|bank|ewallet|e-wallet|kartu kredit|kredit)\b/.test(normalized)) return "non_cash";
   return null;
 }
 
 function resolvePaymentAccount(input: ParseIntentInput, draft: GeminiParserDraft) {
+  const clarificationAnswer = input.clarification?.answer.trim();
+  if (clarificationAnswer) {
+    const matchedByClarification =
+      input.paymentAccounts.find((account) => account.id === clarificationAnswer) ??
+      input.paymentAccounts.find((account) => normalize(account.name) === normalize(clarificationAnswer));
+    if (matchedByClarification) return matchedByClarification;
+    if (clarificationAnswer === "non_cash") return "unknown" as const;
+  }
+
   if (draft.paymentAccountId) {
     const matchedById = input.paymentAccounts.find((account) => account.id === draft.paymentAccountId);
     if (matchedById) return matchedById;
+    return "unknown" as const;
   }
 
   if (draft.paymentAccountName) {
@@ -49,6 +59,7 @@ function resolvePaymentAccount(input: ParseIntentInput, draft: GeminiParserDraft
     );
     if (matchedByName.length === 1) return matchedByName[0];
     if (matchedByName.length > 1) return "ambiguous" as const;
+    return "unknown" as const;
   }
 
   const paymentHint = parsePaymentHint(input.message);
@@ -56,15 +67,70 @@ function resolvePaymentAccount(input: ParseIntentInput, draft: GeminiParserDraft
     const matchedByHint = input.paymentAccounts.filter((account) => account.type === paymentHint);
     if (matchedByHint.length === 1) return matchedByHint[0];
     if (matchedByHint.length > 1) return "ambiguous" as const;
+    if (paymentHint === "non_cash") return "unknown" as const;
   }
 
-  const defaultAccount =
-    input.paymentAccounts.find((account) => account.id === input.defaultPaymentAccountId) ??
-    input.paymentAccounts.find((account) => account.isDefault) ??
-    input.paymentAccounts[0] ??
-    null;
+  return null;
+}
 
-  return defaultAccount;
+function resolveDestinationPaymentAccount(input: ParseIntentInput, draft: GeminiParserDraft) {
+  if (draft.destinationPaymentAccountId) {
+    const matchedById = input.paymentAccounts.find((account) => account.id === draft.destinationPaymentAccountId);
+    if (matchedById) return matchedById;
+    return "unknown" as const;
+  }
+
+  if (draft.destinationPaymentAccountName) {
+    const matchedByName = input.paymentAccounts.filter(
+      (account) => normalize(account.name) === normalize(draft.destinationPaymentAccountName ?? ""),
+    );
+    if (matchedByName.length === 1) return matchedByName[0];
+    if (matchedByName.length > 1) return "ambiguous" as const;
+    return "unknown" as const;
+  }
+
+  return null;
+}
+
+function moneyMovementIntent(intent: ProposedAction["intent"] | null): boolean {
+  return intent !== null && intent !== "receivable_created" && intent !== "reversal";
+}
+
+function outgoingPaymentIntent(intent: ProposedAction["intent"] | null): boolean {
+  return (
+    intent === "general_expense" ||
+    intent === "inventory_purchase_value" ||
+    intent === "asset_record_or_purchase" ||
+    intent === "liability_payment" ||
+    intent === "owner_withdrawal" ||
+    intent === "account_transfer"
+  );
+}
+
+function buildPaymentAccountOptions(input: ParseIntentInput): Array<{ label: string; value: string }> {
+  const options = input.paymentAccounts.map((account) => ({
+    label: account.name,
+    value: account.id,
+  }));
+
+  if (!input.paymentAccounts.some((account) => account.type === "non_cash")) {
+    options.push({ label: "Bank / QRIS / E-wallet", value: "non_cash" });
+  }
+
+  return options;
+}
+
+function unknownPaymentAccountName(input: ParseIntentInput, draft: GeminiParserDraft): string {
+  const fromDraft = draft.paymentAccountName?.trim();
+  if (fromDraft) return fromDraft;
+
+  const normalized = normalize(input.message);
+  if (/\bkartu kredit\b/.test(normalized)) return "Kartu Kredit";
+  if (/\bqris\b/.test(normalized)) return "QRIS";
+  if (/\bbank\b/.test(normalized)) return "Bank";
+  if (/\b(e-wallet|ewallet)\b/.test(normalized)) return "E-wallet";
+  if (/\bkredit\b/.test(normalized)) return "Kartu Kredit";
+  return "Bank / QRIS / E-wallet";
 }
 
 function findMenuMatches(input: ParseIntentInput, draft: GeminiParserDraft) {
@@ -146,6 +212,8 @@ function effectsFor(action: Omit<ProposedAction, "expectedEffects" | "warning">)
       return [`${accountName} bertambah ${amount}`, `Piutang ${action.affectedObject ?? ""}`.trim() + ` berkurang ${amount}`];
     case "owner_withdrawal":
       return [`${accountName} berkurang ${amount}`, `Prive bertambah ${amount}`];
+    case "account_transfer":
+      return [`${accountName} berkurang ${amount}`, `${action.destinationPaymentAccountName ?? "Akun tujuan"} bertambah ${amount}`];
     case "reversal":
       return [`Transaksi terkait akan dibalik sebesar ${amount}`];
     case "general_expense":
@@ -229,13 +297,51 @@ export function validateParserDraft(
     validationErrors.push("Date must use YYYY-MM-DD format.");
   }
 
+  const normalizedIntent = supportedIntentSchema.safeParse(draft.detectedIntent).success ? draft.detectedIntent : null;
   const account = resolvePaymentAccount(input, draft);
+  const destinationAccount = normalizedIntent === "account_transfer" ? resolveDestinationPaymentAccount(input, draft) : null;
   if (account === "ambiguous") {
     missingFields.push("paymentAccountId");
   }
-
-  const normalizedIntent = supportedIntentSchema.safeParse(draft.detectedIntent).success ? draft.detectedIntent : null;
+  if (destinationAccount === "ambiguous") {
+    missingFields.push("destinationPaymentAccountId");
+  }
   let normalizedAffectedObject = draft.affectedObject?.trim() || null;
+
+  if (account === "unknown" && moneyMovementIntent(normalizedIntent)) {
+    const accountName = unknownPaymentAccountName(input, draft);
+    return clarificationResult({
+      draft,
+      parserModel,
+      missingFields: compactUnique([...missingFields, "paymentAccountDependency"]),
+      validationErrors,
+      question: `Akun pembayaran ${accountName} belum dibuat. Buat akun itu dulu, lalu catat transaksi lagi.`,
+    });
+  }
+
+  if (normalizedIntent === "account_transfer") {
+    if (destinationAccount === "unknown") {
+      const accountName = draft.destinationPaymentAccountName?.trim() || "akun tujuan";
+      return clarificationResult({
+        draft,
+        parserModel,
+        missingFields: compactUnique([...missingFields, "destinationPaymentAccountDependency"]),
+        validationErrors,
+        question: `Akun tujuan ${accountName} belum dibuat. Buat akun itu dulu, lalu catat transfer lagi.`,
+      });
+    }
+
+    if (!destinationAccount) {
+      missingFields.push("destinationPaymentAccountId");
+    }
+
+    if (account && account !== "unknown" && account !== "ambiguous" && destinationAccount && destinationAccount !== "ambiguous") {
+      if (account.id === destinationAccount.id) {
+        missingFields.push("destinationPaymentAccountId");
+        validationErrors.push("Source and destination payment accounts must be different.");
+      }
+    }
+  }
 
   if (normalizedIntent === "sales_income") {
     if (input.menuItems.length === 0) {
@@ -381,27 +487,50 @@ export function validateParserDraft(
     }
   }
 
+  if (!account && moneyMovementIntent(normalizedIntent)) {
+    missingFields.push("paymentAccountId");
+  }
+
   const compactMissingFields = compactUnique(missingFields);
   if (compactMissingFields.length > 0 || account === "ambiguous") {
     const intentIsMissing = compactMissingFields.includes("intent");
+    const paymentAccountIsMissing = compactMissingFields.includes("paymentAccountId");
+    const destinationPaymentAccountIsMissing = compactMissingFields.includes("destinationPaymentAccountId");
     return clarificationResult({
       draft,
       parserModel,
       missingFields: compactMissingFields,
       validationErrors,
       question:
-        draft.clarificationQuestion ??
-        (intentIsMissing ? "Transaksi ini paling cocok dicatat sebagai apa?" : "Ada detail transaksi yang masih kurang. Bisa lengkapi?"),
-      options: intentIsMissing ? intentOptions : [],
+        destinationPaymentAccountIsMissing && normalizedIntent === "account_transfer"
+          ? "Uang ini dipindahkan ke akun mana?"
+          : 
+        paymentAccountIsMissing && moneyMovementIntent(normalizedIntent)
+          ? outgoingPaymentIntent(normalizedIntent)
+            ? "Bayarnya pakai akun yang mana?"
+            : "Uangnya masuk ke akun yang mana?"
+          : draft.clarificationQuestion ??
+            (intentIsMissing ? "Transaksi ini paling cocok dicatat sebagai apa?" : "Ada detail transaksi yang masih kurang. Bisa lengkapi?"),
+      options:
+        (paymentAccountIsMissing || destinationPaymentAccountIsMissing) && moneyMovementIntent(normalizedIntent)
+          ? buildPaymentAccountOptions(input)
+          : intentIsMissing
+            ? intentOptions
+            : [],
     });
   }
 
+  const resolvedAccount = account && account !== "unknown" ? account : null;
+  const resolvedDestinationAccount =
+    destinationAccount && destinationAccount !== "unknown" && destinationAccount !== "ambiguous" ? destinationAccount : null;
   const actionBase = {
     intent: draft.detectedIntent!,
     amount: inferredAmount ?? draft.amount!,
     date,
-    paymentAccountId: account?.id ?? null,
-    paymentAccountName: account?.name ?? null,
+    paymentAccountId: resolvedAccount?.id ?? null,
+    paymentAccountName: resolvedAccount?.name ?? null,
+    destinationPaymentAccountId: resolvedDestinationAccount?.id ?? null,
+    destinationPaymentAccountName: resolvedDestinationAccount?.name ?? null,
     description: draft.description!.trim(),
     affectedObject: normalizedAffectedObject,
   };
@@ -416,7 +545,9 @@ export function validateParserDraft(
   }
 
   const warning =
-    actionBase.intent === "receivable_payment"
+    actionBase.intent === "account_transfer"
+      ? "Saldo akun asal akan diperiksa lagi sebelum disimpan."
+      : actionBase.intent === "receivable_payment"
       ? "Ini tidak menambah pendapatan lagi."
       : assumptionNotes.length > 0
       ? `Asumsi parser: ${assumptionNotes.join("; ")}. Periksa lagi sebelum disimpan.`

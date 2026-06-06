@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { DetailMoneyRow, DetailRow, DetailSection, FloatingDetailPanel } from "@/features/app/components/FloatingDetailPanel";
+import { LoadingState } from "@/features/app/components/LoadingState";
+import { RowDetailButton } from "@/features/app/components/RowDetailButton";
 import { ApiClientError } from "@/lib/api-client";
 import { getInventorySummary } from "@/features/app/app.api";
 import { formatDateTimeId } from "@/lib/date-format";
@@ -7,6 +10,7 @@ export function AppStockPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [summary, setSummary] = useState(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   const currencyFormatter = useMemo(
     () =>
@@ -49,11 +53,7 @@ export function AppStockPage() {
   }, []);
 
   if (isLoading) {
-    return (
-      <section className="motion-enter-up rounded-lg border border-border bg-card p-6">
-        <p className="su-type-helper text-muted-foreground">Memuat data stok...</p>
-      </section>
-    );
+    return <LoadingState title="Memuat data stok..." description="Mohon tunggu sebentar." />;
   }
 
   return (
@@ -86,14 +86,32 @@ export function AppStockPage() {
             </article>
           </div>
 
-          <div className="mt-4 rounded-md border border-border bg-background p-4">
-            <p className="su-type-helper text-muted-foreground">{summary.note}</p>
+          <div className="group mt-4 rounded-md border border-border bg-background p-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="su-type-helper text-muted-foreground">{summary.note}</p>
+              <RowDetailButton onClick={() => setIsDetailOpen(true)} />
+            </div>
             {summary.lastUpdatedAt ? (
               <p className="su-type-helper mt-2 text-muted-foreground">
                 Terakhir diperbarui: {formatDateTimeId(summary.lastUpdatedAt)}
               </p>
             ) : null}
           </div>
+
+          {isDetailOpen ? (
+            <FloatingDetailPanel title="Detail stok" subtitle="Ringkasan persediaan" onClose={() => setIsDetailOpen(false)}>
+              <DetailSection title="Nilai stok">
+                <DetailMoneyRow label="Saldo awal" value={summary.openingValue} />
+                <DetailMoneyRow label="Pembelian stok" value={summary.purchasedValue} />
+                <DetailMoneyRow label="Estimasi saat ini" value={summary.estimatedValue} />
+                <DetailRow label="Terakhir diperbarui" value={summary.lastUpdatedAt ? formatDateTimeId(summary.lastUpdatedAt) : "-"} />
+              </DetailSection>
+              <DetailSection title="Catatan MVP">
+                <DetailRow label="Estimasi" value={summary.note} />
+                <DetailRow label="Penjualan" value="Penjualan belum otomatis mengurangi stok." />
+              </DetailSection>
+            </FloatingDetailPanel>
+          ) : null}
         </>
       ) : (
         <div className="mt-5 rounded-md border border-dashed border-border bg-background p-5">

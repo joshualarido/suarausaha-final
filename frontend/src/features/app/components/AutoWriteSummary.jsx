@@ -6,7 +6,7 @@ export function AutoWriteSummary({ item }) {
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[92%] rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-4">
+      <div className="max-w-[94%] rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-4 sm:max-w-[92%]">
         <p className="text-xs font-medium text-emerald-700">Tersimpan otomatis</p>
         <p className="mt-1 text-sm text-foreground">{item.data.message}</p>
         <dl className="mt-3 space-y-1 text-sm">

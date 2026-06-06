@@ -32,6 +32,7 @@ function paymentAccountDeltaForValidation(type: TransactionType, amount: bigint,
     case "inventory_purchase_value":
     case "liability_payment":
     case "owner_withdrawal":
+    case "account_transfer":
       return -amount;
     case "asset_record_or_purchase":
       return hasPaymentAccount ? -amount : null;
@@ -101,6 +102,16 @@ export async function getPaymentAccountForUpdate(
 ): Promise<Pick<PaymentAccountRow, "id" | "businessId" | "name" | "currentBalance"> | null> {
   if (!input.paymentAccountId) return null;
 
+  return getPaymentAccountByIdForUpdate(tx, {
+    businessId: input.businessId,
+    paymentAccountId: input.paymentAccountId,
+  });
+}
+
+export async function getPaymentAccountByIdForUpdate(
+  tx: FinancialWriteTx,
+  input: { businessId: string; paymentAccountId: string },
+): Promise<Pick<PaymentAccountRow, "id" | "businessId" | "name" | "currentBalance">> {
   const paymentAccount = await tx
     .selectFrom("payment_accounts")
     .select(["id", "businessId", "name", "currentBalance"])

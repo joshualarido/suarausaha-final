@@ -8,7 +8,6 @@ import {
   Building2,
   ChevronDown,
   FileText,
-  FlaskConical,
   HandCoins,
   History,
   ListChecks,
@@ -16,13 +15,14 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  PanelLeftClose,
+  Wallet,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session-context";
 import { ApiClientError, APP_NOTIFICATION_EVENT } from "@/lib/api-client";
 import { signOutUser } from "@/features/auth/auth.api";
-import { debugResetOnboarding } from "@/features/business/business.api";
 import { BrandLogo } from "./BrandLogo";
 
 const navigationGroups = [
@@ -30,7 +30,6 @@ const navigationGroups = [
     label: null,
     items: [
       { label: "Obrolan", href: "/app", icon: MessageSquare, end: true },
-      { label: "Ringkasan", href: "/app/overview", icon: LayoutDashboard },
     ],
   },
   {
@@ -38,7 +37,6 @@ const navigationGroups = [
     items: [
       { label: "Laporan", href: "/app/reports", icon: FileText },
       { label: "Transaksi", href: "/app/transactions", icon: Banknote },
-      { label: "Katalog", href: "/app/catalog", icon: ListChecks },
       { label: "Stok", href: "/app/stock", icon: Boxes },
       { label: "Aset", href: "/app/assets", icon: Landmark },
       { label: "Liabilitas", href: "/app/liabilities", icon: HandCoins },
@@ -49,6 +47,8 @@ const navigationGroups = [
     label: "Pengaturan",
     items: [
       { label: "Bisnis", href: "/app/settings/business", icon: Building2 },
+      { label: "Akun pembayaran", href: "/app/settings/payment-accounts", icon: Wallet },
+      { label: "Katalog", href: "/app/settings/catalog", icon: ListChecks },
     ],
   },
 ];
@@ -73,17 +73,18 @@ export function DashboardLayout() {
   const session = useSession();
   const navigate = useNavigate();
   const location = useLocation();
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [isResettingOnboarding, setIsResettingOnboarding] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isNotificationMenuOpen, setIsNotificationMenuOpen] = useState(false);
-  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [activeNotifications, setActiveNotifications] = useState([]);
   const [notificationQueue, setNotificationQueue] = useState([]);
   const [nowTimestamp, setNowTimestamp] = useState(() => Date.now());
   const notificationTimeoutRef = useRef(new Map());
   const closingNotificationRef = useRef(new Set());
+  const touchStartRef = useRef(null);
 
   const userInitial = useMemo(() => getInitial(session.user?.name), [session.user?.name]);
   const businessName = session.businessName ?? "Usaha Kamu";
@@ -91,10 +92,11 @@ export function DashboardLayout() {
   const breadcrumbs = useMemo(() => {
     const pathToLabel = {
       app: "Obrolan",
-      overview: "Overview",
       reports: "Laporan",
       menu: "Katalog",
       katalog: "Katalog",
+      catalog: "Katalog",
+      "payment-accounts": "Akun pembayaran",
       stock: "Stok",
       assets: "Aset",
       liabilities: "Liabilitas",
@@ -105,7 +107,7 @@ export function DashboardLayout() {
       user: "Pengguna",
       history: "Riwayat",
     };
-    const bisnisSections = new Set(["reports", "transactions", "catalog", "menu", "stock", "assets", "liabilities", "receivables"]);
+    const bisnisSections = new Set(["reports", "transactions", "stock", "assets", "liabilities", "receivables"]);
     const segments = location.pathname.split("/").filter(Boolean).slice(1);
     if (segments.length === 0) {
       return ["Obrolan"];
@@ -230,126 +232,209 @@ export function DashboardLayout() {
     }
   }
 
-  async function handleDebugResetOnboarding() {
-    setIsResettingOnboarding(true);
-    setErrorMessage("");
+  function handleTouchStart(event) {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+    };
+  }
 
-    try {
-      await debugResetOnboarding();
-      await signOutUser();
-      await session.refreshSession();
-      navigate("/login", { replace: true });
-      return true;
-    } catch (error) {
-      const fallback = "Gagal reset onboarding debug. Coba lagi.";
-      const message =
-        error instanceof ApiClientError || error instanceof Error ? error.message || fallback : fallback;
-      setErrorMessage(message);
-      setIsResettingOnboarding(false);
-      return false;
+  function handleTouchEnd(event) {
+    const start = touchStartRef.current;
+    const touch = event.changedTouches?.[0];
+    touchStartRef.current = null;
+    if (!start || !touch) return;
+
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaY) > 70 || Math.abs(deltaX) < 70) return;
+
+    if (!isMobileSidebarOpen && start.x <= 32 && deltaX > 0) {
+      setIsMobileSidebarOpen(true);
+    }
+
+    if (isMobileSidebarOpen && deltaX < 0) {
+      setIsMobileSidebarOpen(false);
     }
   }
 
-  return (
-    <main className="h-[100dvh] overflow-hidden bg-background text-foreground">
-      <div className="grid h-full min-h-0 lg:grid-cols-[264px_minmax(0,1fr)]">
-        <aside className="sticky top-0 hidden h-screen min-h-0 border-r border-border bg-card lg:flex lg:flex-col">
-          <div className="border-b border-border px-4 py-4">
+  function renderSidebarContent({ isCollapsed = false, isMobile = false } = {}) {
+    return (
+      <>
+        <div className="flex min-h-16 items-center justify-between gap-2 border-b border-border px-4 py-4">
+          {isCollapsed ? (
+            <span className="text-lg font-bold text-primary">SU</span>
+          ) : (
             <BrandLogo />
-          </div>
+          )}
+          {isMobile ? (
+            <button
+              type="button"
+              aria-label="Tutup navigasi"
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-background hover:text-foreground"
+            >
+              <X aria-hidden className="h-5 w-5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-label={isCollapsed ? "Buka sidebar" : "Ciutkan sidebar"}
+              onClick={() => setIsSidebarCollapsed((previous) => !previous)}
+              className="hidden h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-background hover:text-foreground lg:flex"
+            >
+              <PanelLeftClose
+                aria-hidden
+                className={["h-5 w-5 transition-transform", isCollapsed ? "rotate-180" : ""].join(" ")}
+              />
+            </button>
+          )}
+        </div>
 
-          <div className="su-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6">
-            <nav className="grid gap-6" aria-label="Navigasi aplikasi">
-              {navigationGroups.map((group, groupIndex) => (
-                <section key={group.label ?? "top"} className="grid gap-2">
-                  {group.label ? (
-                    <p className="su-type-meta px-3 text-muted-foreground">
-                      {group.label}
-                    </p>
-                  ) : null}
+        <div className="su-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-5">
+          <nav className="grid gap-5" aria-label="Navigasi aplikasi">
+            {navigationGroups.map((group, groupIndex) => (
+              <section key={group.label ?? "top"} className="grid gap-2">
+                {group.label && !isCollapsed ? (
+                  <p className="su-type-meta px-3 text-muted-foreground">
+                    {group.label}
+                  </p>
+                ) : null}
 
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
+                {group.items.map((item) => {
+                  const Icon = item.icon;
 
-                    return (
-                      <NavLink
-                        key={item.href}
-                        to={item.href}
-                        end={item.end}
-                        className={({ isActive }) =>
-                          [
-                            "su-type-ui flex h-11 items-center gap-2.5 rounded-lg px-6 transition",
-                            isActive
-                              ? "bg-secondary text-primary shadow-[0_10px_28px_rgba(54,92,145,0.12)]"
-                              : "text-muted-foreground hover:bg-background hover:text-foreground",
-                          ].join(" ")
-                        }
-                      >
-                        <Icon aria-hidden className="h-5 w-5" />
-                        <span>{item.label}</span>
-                      </NavLink>
-                    );
-                  })}
+                  return (
+                    <NavLink
+                      key={item.href}
+                      to={item.href}
+                      end={item.end}
+                      title={isCollapsed ? item.label : undefined}
+                      onClick={() => {
+                        if (isMobile) setIsMobileSidebarOpen(false);
+                      }}
+                      className={({ isActive }) =>
+                        [
+                          "su-type-ui flex h-11 items-center gap-2.5 rounded-lg transition",
+                          isCollapsed ? "justify-center px-0" : "px-3",
+                          isActive
+                            ? "bg-secondary text-primary shadow-[0_10px_28px_rgba(54,92,145,0.12)]"
+                            : "text-muted-foreground hover:bg-background hover:text-foreground",
+                        ].join(" ")
+                      }
+                    >
+                      <Icon aria-hidden className="h-5 w-5 shrink-0" />
+                      {!isCollapsed ? <span className="truncate">{item.label}</span> : null}
+                    </NavLink>
+                  );
+                })}
 
-                  {groupIndex === 0 ? <div className="border-t border-border" /> : null}
-                </section>
-              ))}
-            </nav>
+                {groupIndex === 0 ? <div className="border-t border-border" /> : null}
+              </section>
+            ))}
+          </nav>
 
-            <section className="relative mt-auto pt-6">
-              {isProfileMenuOpen ? (
-                <div
-                  className="motion-enter-up absolute right-0 bottom-full left-0 z-20 mb-1 rounded-lg border border-border bg-card p-3 shadow-lg"
-                  role="menu"
-                >
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={handleSignOut}
-                    disabled={isSigningOut}
-                    className="h-11 w-full justify-start gap-2 rounded-md px-3"
-                  >
-                    <LogOut aria-hidden className="h-4 w-4" />
-                    {isSigningOut ? "Keluar..." : "Keluar"}
-                  </Button>
-                  {errorMessage ? (
-                    <p className="su-type-helper mt-2 text-danger" role="alert">
-                      {errorMessage}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <button
-                type="button"
-                onClick={() => setIsProfileMenuOpen((previous) => !previous)}
-                className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left shadow-sm hover:bg-background"
-                aria-expanded={isProfileMenuOpen}
-                aria-haspopup="menu"
+          <section className="relative mt-auto pt-6">
+            {isProfileMenuOpen ? (
+              <div
+                className="motion-enter-up absolute right-0 bottom-full left-0 z-20 mb-1 rounded-lg border border-border bg-card p-3 shadow-lg"
+                role="menu"
               >
-                <div className="su-type-ui flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">
-                  {userInitial}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="su-type-ui truncate text-foreground">{session.user?.name ?? "User"}</p>
-                  <p className="su-type-helper truncate text-muted-foreground">{session.user?.email ?? "-"}</p>
-                </div>
-                <ChevronDown
-                  aria-hidden
-                  className={["h-4 w-4 text-muted-foreground transition-transform", isProfileMenuOpen ? "rotate-180" : ""].join(" ")}
-                />
-              </button>
-            </section>
-          </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                  className="h-11 w-full justify-start gap-2 rounded-md px-3"
+                >
+                  <LogOut aria-hidden className="h-4 w-4" />
+                  {isSigningOut ? "Keluar..." : "Keluar"}
+                </Button>
+                {errorMessage ? (
+                  <p className="su-type-helper mt-2 text-danger" role="alert">
+                    {errorMessage}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => setIsProfileMenuOpen((previous) => !previous)}
+              className={[
+                "flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left shadow-sm hover:bg-background",
+                isCollapsed ? "justify-center" : "",
+              ].join(" ")}
+              aria-expanded={isProfileMenuOpen}
+              aria-haspopup="menu"
+            >
+              <div className="su-type-ui flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">
+                {userInitial}
+              </div>
+              {!isCollapsed ? (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <p className="su-type-ui truncate text-foreground">{session.user?.name ?? "User"}</p>
+                    <p className="su-type-helper truncate text-muted-foreground">{session.user?.email ?? "-"}</p>
+                  </div>
+                  <ChevronDown
+                    aria-hidden
+                    className={["h-4 w-4 text-muted-foreground transition-transform", isProfileMenuOpen ? "rotate-180" : ""].join(" ")}
+                  />
+                </>
+              ) : null}
+            </button>
+          </section>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <main
+      className="h-[100dvh] overflow-hidden bg-background text-foreground"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <div className="flex h-full min-h-0">
+        <aside
+          className={[
+            "sticky top-0 hidden h-screen min-h-0 shrink-0 border-r border-border bg-card transition-[width] duration-200 lg:flex lg:flex-col",
+            isSidebarCollapsed ? "w-[84px]" : "w-[264px]",
+          ].join(" ")}
+        >
+          {renderSidebarContent({ isCollapsed: isSidebarCollapsed })}
         </aside>
 
-        <section className="flex min-h-0 h-full flex-col overflow-hidden">
-          <header className="sticky top-0 z-20 border-b border-l border-border bg-card px-4 py-4 shadow-sm md:px-6">
+        {isMobileSidebarOpen ? (
+          <div className="fixed inset-0 z-50 lg:hidden">
+            <button
+              type="button"
+              aria-label="Tutup navigasi"
+              className="absolute inset-0 h-full w-full bg-black/35"
+              onClick={() => setIsMobileSidebarOpen(false)}
+            />
+            <aside className="motion-enter-left relative z-10 flex h-full w-[min(20rem,86vw)] flex-col border-r border-border bg-card shadow-2xl">
+              {renderSidebarContent({ isMobile: true })}
+            </aside>
+          </div>
+        ) : null}
+
+        <section className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+          <header className="sticky top-0 z-20 border-b border-border bg-card px-3 py-3 shadow-sm sm:px-4 md:px-6">
             <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div className="mb-4 lg:hidden">
-                  <BrandLogo />
-                </div>
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  aria-label="Buka navigasi"
+                  aria-expanded={isMobileSidebarOpen}
+                  onClick={() => setIsMobileSidebarOpen(true)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-primary hover:bg-secondary lg:hidden"
+                >
+                  <LayoutDashboard aria-hidden className="h-5 w-5" />
+                </button>
                 <p className="su-type-ui truncate text-foreground">
                   <span className="font-semibold">{businessName}</span>
                   {breadcrumbs.length > 0 ? (
@@ -473,11 +558,11 @@ export function DashboardLayout() {
           </header>
 
           {isChatRoute ? (
-            <div className="min-h-0 flex-1 overflow-hidden px-4 py-4 md:px-6">
+            <div className="min-h-0 flex-1 overflow-hidden sm:px-4 sm:py-4 md:px-6">
               <Outlet />
             </div>
           ) : (
-            <div className="su-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+            <div className="su-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
               <div className="pb-4 md:pb-6">
                 <Outlet />
               </div>
@@ -486,55 +571,6 @@ export function DashboardLayout() {
         </section>
       </div>
 
-      {import.meta.env.DEV ? (
-        <Button
-          type="button"
-          variant="destructive"
-          disabled={isResettingOnboarding}
-          onClick={() => setIsResetConfirmOpen(true)}
-          className="fixed right-4 bottom-4 z-50 h-11 gap-2 rounded-full px-4 shadow-lg md:right-6 md:bottom-6"
-        >
-          <FlaskConical aria-hidden className="h-4 w-4" />
-          {isResettingOnboarding ? "Reset..." : "Reset Onboarding"}
-        </Button>
-      ) : null}
-
-      {isResetConfirmOpen ? (
-        <div className="motion-enter-up fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4">
-          <section className="motion-enter-scale w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-xl">
-            <h2 className="su-type-ui text-foreground">Reset onboarding?</h2>
-            <p className="su-type-helper mt-2 text-muted-foreground">
-              Data usaha saat ini akan dihapus lalu akun ini langsung logout. Ini khusus untuk debugging.
-            </p>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isResettingOnboarding}
-                onClick={() => setIsResetConfirmOpen(false)}
-                className="h-11 px-4"
-              >
-                Batal
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={isResettingOnboarding}
-                className="h-11 px-4"
-                onClick={async () => {
-                  const isSuccess = await handleDebugResetOnboarding();
-                  if (isSuccess) {
-                    setIsResetConfirmOpen(false);
-                  }
-                }}
-              >
-                {isResettingOnboarding ? "Reset..." : "Ya, reset"}
-              </Button>
-            </div>
-          </section>
-        </div>
-      ) : null}
     </main>
   );
 }

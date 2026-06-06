@@ -9,6 +9,7 @@ export const TRANSACTION_TYPES = [
   "receivable_payment",
   "owner_capital_contribution",
   "owner_withdrawal",
+  "account_transfer",
   "reversal",
 ] as const;
 
@@ -22,6 +23,7 @@ export interface CreateBaseTransactionInput {
   transactionDate: string;
   description: string;
   paymentAccountId?: string | null;
+  destinationPaymentAccountId?: string | null;
   affectedObject?: string | null;
   confirmationRequestId?: string | null;
   parsedCommandId?: string | null;
@@ -43,6 +45,12 @@ export class InvalidPaymentAccountOwnershipError extends Error {
 export class MissingPaymentAccountForTransactionError extends Error {
   constructor() {
     super("Payment account is required for this transaction type.");
+  }
+}
+
+export class InvalidAccountTransferError extends Error {
+  constructor(message = "Akun asal dan tujuan transfer harus berbeda.") {
+    super(message);
   }
 }
 

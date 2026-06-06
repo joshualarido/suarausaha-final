@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { FloatingDetailPanel } from "@/features/app/components/FloatingDetailPanel";
+import { LoadingState } from "@/features/app/components/LoadingState";
+import { RowDetailButton } from "@/features/app/components/RowDetailButton";
+import { getTransactionRowTone, rowToneClassName, toneBadgeClassName, toneTextClassName } from "@/features/app/components/row-state";
 import { ApiClientError } from "@/lib/api-client";
-import { getTransactions } from "@/features/app/app.api";
+import { getTransactionDetail, getTransactions } from "@/features/app/app.api";
+import { TransactionDetailContent } from "./AppTransactionsPage";
 import { formatDateId } from "@/lib/date-format";
 
 const statusLabel = {
@@ -20,6 +25,7 @@ const typeLabel = {
   receivable_payment: "Bayar piutang",
   owner_capital_contribution: "Modal pemilik",
   owner_withdrawal: "Prive",
+  account_transfer: "Transfer antar akun",
   reversal: "Pembalikan",
 };
 
@@ -27,6 +33,7 @@ export function AppHistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [items, setItems] = useState([]);
+  const [detailState, setDetailState] = useState({ status: "idle", item: null, error: "" });
 
   const currencyFormatter = useMemo(
     () =>
@@ -68,12 +75,20 @@ export function AppHistoryPage() {
     };
   }, []);
 
+  async function openTransactionDetail(transactionId) {
+    setDetailState({ status: "loading", item: null, error: "" });
+    try {
+      const payload = await getTransactionDetail(transactionId);
+      setDetailState({ status: "loaded", item: payload?.data ?? null, error: "" });
+    } catch (error) {
+      const fallback = "Detail transaksi belum bisa dimuat.";
+      const message = error instanceof ApiClientError || error instanceof Error ? error.message || fallback : fallback;
+      setDetailState({ status: "error", item: null, error: message });
+    }
+  }
+
   if (isLoading) {
-    return (
-      <section className="motion-enter-up rounded-lg border border-border bg-card p-6">
-        <p className="su-type-helper text-muted-foreground">Memuat riwayat...</p>
-      </section>
-    );
+    return <LoadingState title="Memuat riwayat..." description="Mohon tunggu sebentar." />;
   }
 
   return (
@@ -95,26 +110,45 @@ export function AppHistoryPage() {
             <p className="su-type-helper text-muted-foreground">Belum ada transaksi tersimpan.</p>
           </div>
         ) : (
-          items.map((item) => (
-            <article key={item.id} className="rounded-md border border-border bg-background p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="su-type-ui text-foreground">{typeLabel[item.type] ?? item.type}</p>
-                  <p className="su-type-helper mt-1 text-muted-foreground">{item.description}</p>
-                </div>
-                <p className="su-type-ui text-foreground">{currencyFormatter.format(item.amount ?? 0)}</p>
-              </div>
+          items.map((item) => {
+            const tone = getTransactionRowTone(item);
 
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                <span>{formatDateId(item.date)}</span>
-                <span>{statusLabel[item.status] ?? item.status}</span>
-                <span>{item.paymentAccount?.name ?? "Tanpa akun pembayaran"}</span>
-                {item.affectedObject ? <span>Objek: {item.affectedObject}</span> : null}
-              </div>
-            </article>
-          ))
+            return (
+              <article key={item.id} className={rowToneClassName(tone, "group rounded-md border border-border p-4")}>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="su-type-ui text-foreground">{typeLabel[item.type] ?? item.type}</p>
+                    <p className="su-type-helper mt-1 text-muted-foreground">{item.description}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <p className={toneTextClassName(tone, "su-type-ui")}>{currencyFormatter.format(item.amount ?? 0)}</p>
+                    <RowDetailButton onClick={() => openTransactionDetail(item.id)} />
+                  </div>
+                </div>
+
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>{formatDateId(item.date)}</span>
+                  <span className={toneBadgeClassName(tone)}>{statusLabel[item.status] ?? item.status}</span>
+                  <span>{item.paymentAccount?.name ?? "Tanpa akun pembayaran"}</span>
+                  {item.affectedObject ? <span>Objek: {item.affectedObject}</span> : null}
+                </div>
+              </article>
+            );
+          })
         )}
       </div>
+
+      {detailState.status !== "idle" ? (
+        <FloatingDetailPanel
+          title="Detail transaksi"
+          subtitle={detailState.item?.description ?? (detailState.status === "loading" ? "Memuat detail..." : "Detail tidak tersedia")}
+          onClose={() => setDetailState({ status: "idle", item: null, error: "" })}
+        >
+          {detailState.status === "loading" ? <p className="su-type-helper text-muted-foreground">Memuat detail transaksi...</p> : null}
+          {detailState.status === "error" ? <p className="su-type-helper text-danger">{detailState.error}</p> : null}
+          {detailState.item ? <TransactionDetailContent detail={detailState.item} /> : null}
+        </FloatingDetailPanel>
+      ) : null}
     </section>
   );
 }

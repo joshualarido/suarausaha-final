@@ -7,13 +7,7 @@ import { startGoogleSignIn } from "@/features/auth/auth.api";
 
 function BrandLogo() {
   return (
-    <div className="flex items-center gap-3">
-      <div
-        aria-hidden
-        className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-lg font-bold text-primary-foreground shadow-sm"
-      >
-        ru
-      </div>
+    <div className="flex items-center">
       <span className="text-2xl font-bold tracking-tight text-primary">SuaraUsaha</span>
     </div>
   );

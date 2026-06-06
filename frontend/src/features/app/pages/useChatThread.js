@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { hydrateChatItemsFromThread } from "@/features/app/chat-normalizers";
-import { clearChatThread, clarifyChatMessage, getChatThread, parseChatMessage, undoLatestTransactionViaChat } from "@/features/chat/chat.api";
+import { clearChatThread, clarifyChatMessage, getChatThread, parseChatMessage, querySura, undoLatestTransactionViaChat } from "@/features/chat/chat.api";
 import { cancelConfirmation, confirmConfirmation, editConfirmation } from "@/features/confirmations/confirmations.api";
 
 export function useChatThread() {
@@ -86,7 +86,12 @@ export function useChatThread() {
       if (activeClarification) {
         await clarifyChatMessage(activeClarification.data.clarificationId, submittedMessage);
       } else {
-        await parseChatMessage(submittedMessage);
+        const suraPayload = await querySura(submittedMessage);
+        const suraType = suraPayload?.data?.type;
+
+        if (suraType === "write_action_redirect" || suraType === "report_request_redirect") {
+          await parseChatMessage(submittedMessage);
+        }
       }
       await refreshChatThread();
       setStatus("idle");

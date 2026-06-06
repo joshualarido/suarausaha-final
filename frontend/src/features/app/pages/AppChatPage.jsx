@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Hourglass, LockKeyhole, Mic, Paperclip, RotateCcw, Send, Trash2 } from "lucide-react";
+import { Hourglass, LockKeyhole, RotateCcw, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatMessageList } from "@/features/app/components/ChatMessageList";
 import { useChatThread } from "./useChatThread";
@@ -66,7 +66,7 @@ export function AppChatPage() {
 
   if (threadLoading) {
     return (
-      <section className="flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <section className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-card shadow-sm sm:rounded-xl sm:border sm:border-border">
         <div className="flex flex-col items-center gap-4 px-4 py-10 text-center">
           <Hourglass className="h-10 w-10 animate-spin text-primary" aria-hidden />
           <div>
@@ -79,14 +79,14 @@ export function AppChatPage() {
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <header className="border-b border-border bg-card px-4 py-4 md:px-6">
-        <div className="flex w-full items-center justify-between gap-3">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-card shadow-sm sm:rounded-xl sm:border sm:border-border">
+      <header className="border-b border-border bg-card px-3 py-3 sm:px-4 md:px-6">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="h-11 w-11 rounded-full border border-border bg-secondary/50" aria-hidden />
+            <div className="h-10 w-10 shrink-0 rounded-full border border-border bg-secondary/50 sm:h-11 sm:w-11" aria-hidden />
             <div className="min-w-0">
               <p className="su-type-ui truncate text-foreground">Sura Assistant</p>
-              <div className="mt-0.5 flex items-center gap-2">
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
                 <span className="text-xs text-muted-foreground">Online</span>
                 <span className="text-xs text-muted-foreground/80">|</span>
@@ -94,25 +94,25 @@ export function AppChatPage() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <Button
               type="button"
               variant="outline"
               size="sm"
               disabled={isBusy || isUndoingLatest}
               onClick={undoLatestTransaction}
-              className="h-9 gap-2 px-3"
+              className="h-9 flex-1 gap-2 px-3 sm:flex-none"
             >
               <RotateCcw aria-hidden className="h-4 w-4" />
               {isUndoingLatest ? "Undo..." : "Undo"}
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant="destructive"
               size="sm"
               disabled={isBusy || isClearingChat}
               onClick={clearThread}
-              className="h-9 gap-2 px-3"
+              className="h-9 flex-1 gap-2 px-3 sm:flex-none"
             >
               <Trash2 aria-hidden className="h-4 w-4" />
               {isClearingChat ? "Membersihkan..." : "Clear Chat"}
@@ -121,7 +121,7 @@ export function AppChatPage() {
         </div>
       </header>
 
-      <div ref={chatScrollRef} className="su-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+      <div ref={chatScrollRef} className="su-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
         <ChatMessageList
           activeConfirmation={activeConfirmation}
           chatItems={chatItems}
@@ -140,10 +140,9 @@ export function AppChatPage() {
         />
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t border-border bg-card px-4 py-4 md:px-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="flex min-h-14 flex-1 items-center gap-3 rounded-lg border border-border bg-card px-4 shadow-sm focus-within:border-primary/45 focus-within:ring-3 focus-within:ring-ring/15">
-            <Paperclip aria-hidden className="h-5 w-5 shrink-0 text-muted-foreground" />
+      <form onSubmit={handleSubmit} className="border-t border-border bg-card px-3 py-3 sm:px-4 sm:py-4 md:px-6">
+        <div className="flex gap-2 sm:gap-3">
+          <div className="flex min-h-12 flex-1 items-center gap-3 rounded-lg border border-border bg-card px-3 shadow-sm focus-within:border-primary/45 focus-within:ring-3 focus-within:ring-ring/15 sm:min-h-14 sm:px-4">
             <input
               type="text"
               value={message}
@@ -152,14 +151,11 @@ export function AppChatPage() {
               placeholder="Tulis transaksi usaha..."
               className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
-            <button type="button" disabled={isBusy} className="text-muted-foreground disabled:opacity-50">
-              <Mic aria-hidden className="h-5 w-5" />
-            </button>
           </div>
 
-          <Button type="submit" disabled={isBusy || !message.trim()} className="h-12 gap-2 px-5">
+          <Button type="submit" disabled={isBusy || !message.trim()} className="h-12 gap-2 px-4 sm:px-5">
             <Send aria-hidden className="h-4 w-4" />
-            Kirim
+            <span className="hidden sm:inline">Kirim</span>
           </Button>
         </div>
         <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">

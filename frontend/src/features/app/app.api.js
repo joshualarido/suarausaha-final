@@ -12,12 +12,12 @@ function buildQueryString(query = {}) {
   return queryString ? `?${queryString}` : "";
 }
 
-export async function getOverview(query = {}) {
-  return apiRequest(`/api/v1/overview${buildQueryString(query)}`);
-}
-
 export async function getTransactions(query = {}) {
   return apiRequest(`/api/v1/transactions${buildQueryString(query)}`);
+}
+
+export async function getTransactionDetail(transactionId) {
+  return apiRequest(`/api/v1/transactions/${transactionId}`);
 }
 
 export async function getInventorySummary() {

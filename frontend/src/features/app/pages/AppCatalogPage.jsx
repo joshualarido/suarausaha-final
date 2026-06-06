@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChefHat, Plus, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LoadingState } from "@/features/app/components/LoadingState";
 import { ApiClientError } from "@/lib/api-client";
 import { createMenuItem, getMenuItems, removeMenuItem, updateMenuItem } from "@/features/catalog/menu-items.api";
 
@@ -219,11 +220,7 @@ export function AppCatalogPage() {
   }
 
   if (isLoading) {
-    return (
-      <section className="motion-enter-up rounded-lg border border-border bg-card p-6">
-        <p className="su-type-helper text-muted-foreground">Memuat katalog...</p>
-      </section>
-    );
+    return <LoadingState title="Memuat katalog..." description="Mohon tunggu sebentar." />;
   }
 
   return (
@@ -303,7 +300,7 @@ export function AppCatalogPage() {
             const draft = drafts[item.id] ?? toDraft(item);
 
             return (
-              <article key={item.id} className="rounded-md border border-border bg-background p-4">
+              <article key={item.id} className="group rounded-md border border-border bg-background p-4">
                 <div className="grid gap-3 lg:grid-cols-[minmax(12rem,1.4fr)_minmax(10rem,1fr)_minmax(12rem,1fr)_auto_auto] lg:items-end">
                   <label className="grid gap-2">
                     <span className="su-type-ui text-foreground">Nama item</span>
@@ -357,6 +354,7 @@ export function AppCatalogPage() {
                     <Trash2 aria-hidden className="h-4 w-4" />
                     {removingItemId === item.id ? "Menghapus..." : "Hapus"}
                   </Button>
+
                 </div>
 
                 <p className="su-type-helper mt-3 text-muted-foreground">

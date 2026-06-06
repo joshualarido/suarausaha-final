@@ -16,6 +16,7 @@ const expectedIntentOptions = [
   "receivable_payment",
   "owner_capital_contribution",
   "owner_withdrawal",
+  "account_transfer",
   "reversal",
 ];
 
@@ -233,6 +234,78 @@ describe("Gemini parser draft validation", () => {
 
     expect(result.status).toBe("needs_clarification");
     expect(result.missingFields).toContain("paymentAccountId");
+  });
+
+  it("asks which payment account to use when a money-out transaction has no payment account", () => {
+    const result = validateParserDraft(
+      baseInput({ message: "bayar bensin 50 ribu tanggal 4 Juni 2026", today: "2026-06-05" }),
+      baseDraft({
+        detectedIntent: "general_expense",
+        amount: 50_000,
+        date: "2026-06-04",
+        paymentAccountId: null,
+        paymentAccountName: null,
+        description: "Bayar bensin",
+        affectedObject: null,
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("paymentAccountId");
+    expect(result.question).toBe("Bayarnya pakai akun yang mana?");
+    expect(result.options).toContainEqual({ label: "Kas", value: "acct_cash" });
+    expect(result.options).toContainEqual({ label: "Bank / QRIS / E-wallet", value: "non_cash" });
+  });
+
+  it("asks user to create a payment account when Gemini names an account that does not exist", () => {
+    const result = validateParserDraft(
+      baseInput({ message: "bayar bensin 50 ribu pake akun kartu kredit tanggal 4 Juni 2026", today: "2026-06-05" }),
+      baseDraft({
+        detectedIntent: "general_expense",
+        amount: 50_000,
+        date: "2026-06-04",
+        paymentAccountId: null,
+        paymentAccountName: "Kartu Kredit",
+        description: "Bayar bensin",
+        affectedObject: null,
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("paymentAccountDependency");
+    expect(result.question).toBe("Akun pembayaran Kartu Kredit belum dibuat. Buat akun itu dulu, lalu catat transaksi lagi.");
+  });
+
+  it("uses the clarification answer as the payment account when the user chooses Kas", () => {
+    const result = validateParserDraft(
+      baseInput({
+        message: "bayar bensin 50 ribu tanggal 4 Juni 2026",
+        today: "2026-06-05",
+        clarification: {
+          originalMessage: "bayar bensin 50 ribu tanggal 4 Juni 2026",
+          previousPayload: {},
+          answer: "acct_cash",
+        },
+      }),
+      baseDraft({
+        detectedIntent: "general_expense",
+        amount: 50_000,
+        date: "2026-06-04",
+        paymentAccountId: null,
+        paymentAccountName: null,
+        description: "Bayar bensin",
+        affectedObject: null,
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      paymentAccountId: "acct_cash",
+      paymentAccountName: "Kas",
+    });
   });
 
   it("prefers cash account from message keyword even when default account is non-cash", () => {

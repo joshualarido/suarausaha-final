@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { PaginationControls } from "@/features/app/components/PaginationControls";
+import { DetailJsonBlock, DetailMoneyRow, DetailRow, DetailSection, FloatingDetailPanel } from "@/features/app/components/FloatingDetailPanel";
+import { TableLoadingRow } from "@/features/app/components/LoadingState";
+import { RowDetailButton } from "@/features/app/components/RowDetailButton";
+import { SortableTableHeader } from "@/features/app/components/SortableTableHeader";
+import { getTransactionRowTone, rowToneClassName, toneBadgeClassName, toneTextClassName } from "@/features/app/components/row-state";
+import { nextSortState } from "@/features/app/components/table-sort";
 import { ApiClientError } from "@/lib/api-client";
-import { getTransactions } from "@/features/app/app.api";
+import { getTransactionDetail, getTransactions } from "@/features/app/app.api";
 import { formatDateId } from "@/lib/date-format";
 
 const typeOptions = [
@@ -16,6 +22,7 @@ const typeOptions = [
   { label: "Pembayaran piutang", value: "receivable_payment" },
   { label: "Modal pemilik", value: "owner_capital_contribution" },
   { label: "Prive", value: "owner_withdrawal" },
+  { label: "Transfer antar akun", value: "account_transfer" },
   { label: "Pembalikan", value: "reversal" },
 ];
 
@@ -32,10 +39,13 @@ export function AppTransactionsPage() {
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
   const [total, setTotal] = useState(0);
+  const [detailState, setDetailState] = useState({ status: "idle", item: null, error: "" });
   const [filters, setFilters] = useState({
     type: "",
     fromDate: "",
     toDate: "",
+    sortBy: "date",
+    sortDirection: "desc",
   });
 
   const currencyFormatter = useMemo(
@@ -64,6 +74,8 @@ export function AppTransactionsPage() {
           type: filters.type || undefined,
           fromDate: filters.fromDate || undefined,
           toDate: filters.toDate || undefined,
+          sortBy: filters.sortBy,
+          sortDirection: filters.sortDirection,
         });
 
         if (!mounted) return;
@@ -88,7 +100,7 @@ export function AppTransactionsPage() {
     return () => {
       mounted = false;
     };
-  }, [filters.fromDate, filters.toDate, filters.type, limit, page]);
+  }, [filters.fromDate, filters.sortBy, filters.sortDirection, filters.toDate, filters.type, limit, page]);
 
   function handleFilterChange(field, value) {
     setFilters((previous) => ({
@@ -96,6 +108,26 @@ export function AppTransactionsPage() {
       [field]: value,
     }));
     setPage(1);
+  }
+
+  function handleSortChange(sortBy, defaultDirection = "desc") {
+    setFilters((previous) => ({
+      ...previous,
+      ...nextSortState(previous, sortBy, defaultDirection),
+    }));
+    setPage(1);
+  }
+
+  async function openTransactionDetail(transactionId) {
+    setDetailState({ status: "loading", item: null, error: "" });
+    try {
+      const payload = await getTransactionDetail(transactionId);
+      setDetailState({ status: "loaded", item: payload?.data ?? null, error: "" });
+    } catch (error) {
+      const fallback = "Detail transaksi belum bisa dimuat.";
+      const message = error instanceof ApiClientError || error instanceof Error ? error.message || fallback : fallback;
+      setDetailState({ status: "error", item: null, error: message });
+    }
   }
 
   return (
@@ -150,45 +182,82 @@ export function AppTransactionsPage() {
         <table className="min-w-full divide-y divide-border text-sm">
           <thead className="bg-background">
             <tr>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Tanggal</th>
+              <SortableTableHeader
+                label="Tanggal"
+                sortKey="date"
+                currentSort={filters}
+                onSort={handleSortChange}
+              />
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Deskripsi</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Akun</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-              <th className="px-4 py-3 text-right font-medium text-muted-foreground">Jumlah</th>
+              <SortableTableHeader
+                label="Status"
+                sortKey="status"
+                currentSort={filters}
+                onSort={handleSortChange}
+                defaultDirection="asc"
+              />
+              <SortableTableHeader
+                label="Jumlah"
+                sortKey="amount"
+                align="right"
+                currentSort={filters}
+                onSort={handleSortChange}
+              />
+              <th className="w-14 px-4 py-3 text-right font-medium text-muted-foreground">Detail</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-card">
             {isLoading ? (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-muted-foreground">
-                  Memuat transaksi...
-                </td>
-              </tr>
+              <TableLoadingRow colSpan={6} label="Memuat transaksi..." />
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-muted-foreground">
+                <td colSpan={6} className="px-4 py-6 text-muted-foreground">
                   Belum ada transaksi sesuai filter.
                 </td>
               </tr>
             ) : (
-              items.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-4 py-3 text-muted-foreground">{formatDateId(item.date)}</td>
-                  <td className="px-4 py-3 text-foreground">
-                    <p>{item.description}</p>
-                    {item.affectedObject ? (
-                      <p className="mt-1 text-xs text-muted-foreground">Objek: {item.affectedObject}</p>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{item.paymentAccount?.name ?? "-"}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{statusLabel[item.status] ?? item.status}</td>
-                  <td className="px-4 py-3 text-right text-foreground">{currencyFormatter.format(item.amount ?? 0)}</td>
-                </tr>
-              ))
+              items.map((item) => {
+                const tone = getTransactionRowTone(item);
+
+                return (
+                  <tr key={item.id} className={rowToneClassName(tone, "group")}>
+                    <td className="px-4 py-3 text-muted-foreground">{formatDateId(item.date)}</td>
+                    <td className="px-4 py-3 text-foreground">
+                      <p>{item.description}</p>
+                      {item.affectedObject ? (
+                        <p className="mt-1 text-xs text-muted-foreground">Objek: {item.affectedObject}</p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{item.paymentAccount?.name ?? "-"}</td>
+                    <td className="px-4 py-3">
+                      <span className={toneBadgeClassName(tone)}>{statusLabel[item.status] ?? item.status}</span>
+                    </td>
+                    <td className={toneTextClassName(tone, "px-4 py-3 text-right font-semibold")}>
+                      {currencyFormatter.format(item.amount ?? 0)}
+                    </td>
+                    <td className="w-14 px-4 py-3 text-right">
+                      <RowDetailButton onClick={() => openTransactionDetail(item.id)} />
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
+
+      {detailState.status !== "idle" ? (
+        <FloatingDetailPanel
+          title="Detail transaksi"
+          subtitle={detailState.item?.description ?? (detailState.status === "loading" ? "Memuat detail..." : "Detail tidak tersedia")}
+          onClose={() => setDetailState({ status: "idle", item: null, error: "" })}
+        >
+          {detailState.status === "loading" ? <p className="su-type-helper text-muted-foreground">Memuat detail transaksi...</p> : null}
+          {detailState.status === "error" ? <p className="su-type-helper text-danger">{detailState.error}</p> : null}
+          {detailState.item ? <TransactionDetailContent detail={detailState.item} /> : null}
+        </FloatingDetailPanel>
+      ) : null}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <p className="su-type-helper text-muted-foreground">
@@ -198,4 +267,67 @@ export function AppTransactionsPage() {
       </div>
     </section>
   );
+}
+
+export function TransactionDetailContent({ detail }) {
+  return (
+    <div className="grid gap-1">
+      <DetailSection title="Ringkasan">
+        <DetailRow label="Status" value={statusLabel[detail.status] ?? detail.status} />
+        <DetailRow label="Mode pencatatan" value={detail.captureMode === "auto_fast" ? "Tersimpan otomatis / fast-saved" : "Lewat konfirmasi"} />
+        <DetailMoneyRow label="Jumlah" value={detail.amount} />
+        <DetailRow label="Tanggal" value={formatDateId(detail.date)} />
+        <DetailRow label="Akun pembayaran" value={detail.paymentAccount?.name ?? "-"} />
+        <DetailRow label="Objek" value={detail.affectedObject ?? "-"} />
+      </DetailSection>
+
+      <DetailSection title="Audit input">
+        <DetailRow label="Raw input" value={detail.rawInputText ?? "-"} />
+        <DetailRow label="Deskripsi" value={detail.description} />
+        <DetailJsonBlock value={detail.interpretedAction} />
+      </DetailSection>
+
+      <DetailSection title="Efek transaksi">
+        {Array.isArray(detail.effects) && detail.effects.length ? (
+          detail.effects.map((effect, index) => (
+            <DetailRow
+              key={`${effect.targetType}-${effect.effectType}-${index}`}
+              label={`${effect.targetType} / ${effect.effectType}`}
+              value={`${effect.direction === "increase" ? "Bertambah" : "Berkurang"} ${currencyFormatterPlain(effect.amount)} (${currencyFormatterPlain(effect.beforeAmount)} -> ${currencyFormatterPlain(effect.afterAmount)})`}
+            />
+          ))
+        ) : (
+          <p className="su-type-helper text-muted-foreground">Tidak ada efek tersimpan.</p>
+        )}
+        <DetailRow
+          label="Penurunan stok"
+          value={detail.inventoryDecrease?.hasDecrease ? currencyFormatterPlain(detail.inventoryDecrease.amount) : "Tidak ada penurunan stok"}
+        />
+      </DetailSection>
+
+      {Array.isArray(detail.expectedEffects) && detail.expectedEffects.length ? (
+        <DetailSection title="Efek yang diinterpretasikan">
+          {detail.expectedEffects.map((effect) => (
+            <DetailRow key={effect} label="Efek" value={effect} />
+          ))}
+        </DetailSection>
+      ) : null}
+
+      {Array.isArray(detail.notes) && detail.notes.length ? (
+        <DetailSection title="Catatan">
+          {detail.notes.map((note) => (
+            <DetailRow key={note} label="Catatan" value={note} />
+          ))}
+        </DetailSection>
+      ) : null}
+    </div>
+  );
+}
+
+function currencyFormatterPlain(value) {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(value ?? 0);
 }

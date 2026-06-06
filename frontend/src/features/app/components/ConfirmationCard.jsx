@@ -40,7 +40,7 @@ export function ConfirmationCard({
 
     return (
       <div className="flex justify-start">
-        <div className="max-w-[92%] rounded-2xl border border-[#D4E1F0] bg-card px-4 py-4">
+        <div className="max-w-[94%] rounded-2xl border border-[#D4E1F0] bg-card px-4 py-4 sm:max-w-[92%]">
           <p className="text-xs text-primary">Butuh konfirmasi</p>
           {!isCardActive ? (
             <p className="mt-1 text-xs text-muted-foreground">Konfirmasi ini sudah tidak aktif.</p>
@@ -109,7 +109,7 @@ export function ConfirmationCard({
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[92%] rounded-2xl border border-[#D4E1F0] bg-card px-4 py-4">
+      <div className="max-w-[94%] rounded-2xl border border-[#D4E1F0] bg-card px-4 py-4 sm:max-w-[92%]">
         <p className="text-xs text-primary">Butuh konfirmasi</p>
         {!isCardActive ? (
           <p className="mt-1 text-xs text-muted-foreground">Konfirmasi ini sudah tidak aktif.</p>
@@ -160,9 +160,15 @@ export function ConfirmationCard({
                 <dd>{formatDateId(proposedAction.date)}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Akun</dt>
+                <dt className="text-muted-foreground">{proposedAction.intent === "account_transfer" ? "Dari akun" : "Akun"}</dt>
                 <dd>{proposedAction.paymentAccountName ?? "Kas"}</dd>
               </div>
+              {proposedAction.intent === "account_transfer" ? (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Ke akun</dt>
+                  <dd>{proposedAction.destinationPaymentAccountName ?? "-"}</dd>
+                </div>
+              ) : null}
               {proposedAction.affectedObject ? (
                 <div className="flex justify-between gap-3">
                   <dt className="text-muted-foreground">{targetLabel}</dt>

@@ -2,6 +2,7 @@ import { Hourglass, MessageCircle } from "lucide-react";
 import { AutoWriteSummary } from "./AutoWriteSummary";
 import { ClarificationCard } from "./ClarificationCard";
 import { ConfirmationCard } from "./ConfirmationCard";
+import { SuraAnswerCard } from "./SuraAnswerCard";
 
 const examplePrompts = [
   "Jual ayam geprek 500 ribu tunai",
@@ -29,7 +30,7 @@ export function ChatMessageList({
   return (
     <div className="flex w-full flex-col gap-3">
       {chatItems.length === 0 ? (
-        <div className="rounded-xl border border-border bg-secondary/20 p-5 text-left">
+        <div className="rounded-xl border border-border bg-secondary/20 p-4 text-left sm:p-5">
           <h2 className="su-type-section-title text-foreground">Mulai catat transaksi lewat chat</h2>
           <p className="su-type-body mt-2 text-muted-foreground">
             Ketik seperti ngobrol. Nanti saya kasih kartu konfirmasi langsung di chat ini.
@@ -56,7 +57,7 @@ export function ChatMessageList({
           return (
             <div key={item.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                className={`max-w-[94%] rounded-2xl px-4 py-3 text-sm sm:max-w-[85%] ${
                   isUser ? "bg-primary text-primary-foreground" : "border border-border bg-card text-foreground"
                 }`}
               >
@@ -101,12 +102,16 @@ export function ChatMessageList({
           return <AutoWriteSummary key={item.id} item={item} />;
         }
 
+        if (item.type === "sura_answer") {
+          return <SuraAnswerCard key={item.id} item={item} />;
+        }
+
         return null;
       })}
 
       {isBusy ? (
         <div className="flex justify-start">
-          <div className="max-w-[92%] rounded-2xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+          <div className="max-w-[94%] rounded-2xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground sm:max-w-[92%]">
             <div className="flex items-center gap-2">
               <Hourglass className="h-4 w-4 animate-spin" aria-hidden />
               <span>Sura Assistant sedang memproses pesan...</span>

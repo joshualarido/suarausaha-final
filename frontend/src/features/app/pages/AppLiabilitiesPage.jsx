@@ -1,12 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
+import { DetailMoneyRow, DetailRow, DetailSection, FloatingDetailPanel } from "@/features/app/components/FloatingDetailPanel";
+import { LoadingState } from "@/features/app/components/LoadingState";
+import { RowDetailButton } from "@/features/app/components/RowDetailButton";
+import { SortableTableHeader } from "@/features/app/components/SortableTableHeader";
+import {
+  getPaymentStatusTone,
+  paymentStatusLabel,
+  rowToneClassName,
+  toneBadgeClassName,
+  toneTextClassName,
+} from "@/features/app/components/row-state";
+import { nextSortState, sortRows } from "@/features/app/components/table-sort";
 import { ApiClientError } from "@/lib/api-client";
 import { getLiabilitiesSummary } from "@/features/app/app.api";
 import { formatDateId } from "@/lib/date-format";
+
+const sortGetters = {
+  createdDate: (item) => item.createdDate,
+  lenderName: (item) => item.lenderName,
+  originalAmount: (item) => item.originalAmount ?? 0,
+  outstandingAmount: (item) => item.outstandingAmount ?? 0,
+  status: (item) => item.status,
+};
 
 export function AppLiabilitiesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [summary, setSummary] = useState(null);
+  const [sort, setSort] = useState({ sortBy: "outstandingAmount", sortDirection: "desc" });
+  const [detailItem, setDetailItem] = useState(null);
 
   const currencyFormatter = useMemo(
     () =>
@@ -49,14 +71,14 @@ export function AppLiabilitiesPage() {
   }, []);
 
   if (isLoading) {
-    return (
-      <section className="motion-enter-up rounded-lg border border-border bg-card p-6">
-        <p className="su-type-helper text-muted-foreground">Memuat data liabilitas...</p>
-      </section>
-    );
+    return <LoadingState title="Memuat data liabilitas..." description="Mohon tunggu sebentar." />;
   }
 
-  const liabilityItems = Array.isArray(summary?.items) ? summary.items : [];
+  const liabilityItems = sortRows(Array.isArray(summary?.items) ? summary.items : [], sort.sortBy, sort.sortDirection, sortGetters);
+
+  function handleSortChange(sortBy, defaultDirection = "desc") {
+    setSort((previous) => nextSortState(previous, sortBy, defaultDirection));
+  }
 
   return (
     <section className="motion-enter-up rounded-lg border border-border bg-card p-6 shadow-sm">
@@ -92,38 +114,90 @@ export function AppLiabilitiesPage() {
             <table className="min-w-full divide-y divide-border text-sm">
               <thead className="bg-background">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Pemberi utang</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Tanggal</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Awal</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Sisa</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+                  <SortableTableHeader
+                    label="Pemberi utang"
+                    sortKey="lenderName"
+                    currentSort={sort}
+                    onSort={handleSortChange}
+                    defaultDirection="asc"
+                  />
+                  <SortableTableHeader
+                    label="Tanggal"
+                    sortKey="createdDate"
+                    currentSort={sort}
+                    onSort={handleSortChange}
+                  />
+                  <SortableTableHeader
+                    label="Awal"
+                    sortKey="originalAmount"
+                    align="right"
+                    currentSort={sort}
+                    onSort={handleSortChange}
+                  />
+                  <SortableTableHeader
+                    label="Sisa"
+                    sortKey="outstandingAmount"
+                    align="right"
+                    currentSort={sort}
+                    onSort={handleSortChange}
+                  />
+                  <SortableTableHeader
+                    label="Status"
+                    sortKey="status"
+                    currentSort={sort}
+                    onSort={handleSortChange}
+                    defaultDirection="asc"
+                  />
+                  <th className="w-14 px-4 py-3 text-right font-medium text-muted-foreground">Detail</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border bg-card">
                 {liabilityItems.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-muted-foreground">
+                    <td colSpan={6} className="px-4 py-6 text-muted-foreground">
                       Belum ada data liabilitas.
                     </td>
                   </tr>
                 ) : (
-                  liabilityItems.map((item) => (
-                    <tr key={item.id}>
-                      <td className="px-4 py-3 text-foreground">{item.lenderName}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDateId(item.createdDate)}</td>
-                      <td className="px-4 py-3 text-right text-foreground">
-                        {currencyFormatter.format(item.originalAmount ?? 0)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-foreground">
-                        {currencyFormatter.format(item.outstandingAmount ?? 0)}
-                      </td>
-                      <td className="px-4 py-3 capitalize text-muted-foreground">{item.status}</td>
-                    </tr>
-                  ))
+                  liabilityItems.map((item) => {
+                    const tone = getPaymentStatusTone(item.status);
+
+                    return (
+                      <tr key={item.id} className={rowToneClassName(tone, "group")}>
+                        <td className="px-4 py-3 text-foreground">{item.lenderName}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{formatDateId(item.createdDate)}</td>
+                        <td className="px-4 py-3 text-right text-foreground">
+                          {currencyFormatter.format(item.originalAmount ?? 0)}
+                        </td>
+                        <td className={toneTextClassName(tone, "px-4 py-3 text-right font-semibold")}>
+                          {currencyFormatter.format(item.outstandingAmount ?? 0)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={toneBadgeClassName(tone)}>{paymentStatusLabel[item.status] ?? item.status}</span>
+                        </td>
+                        <td className="w-14 px-4 py-3 text-right">
+                          <RowDetailButton onClick={() => setDetailItem(item)} />
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
+
+          {detailItem ? (
+            <FloatingDetailPanel title="Detail utang" subtitle={detailItem.lenderName} onClose={() => setDetailItem(null)}>
+              <DetailSection title="Utang">
+                <DetailRow label="Pemberi utang" value={detailItem.lenderName} />
+                <DetailRow label="Status" value={paymentStatusLabel[detailItem.status] ?? detailItem.status} />
+                <DetailMoneyRow label="Jumlah awal" value={detailItem.originalAmount} />
+                <DetailMoneyRow label="Sisa utang" value={detailItem.outstandingAmount} />
+                <DetailRow label="Tanggal catat" value={formatDateId(detailItem.createdDate)} />
+                <DetailRow label="Sumber" value={detailItem.sourceTransactionId === "opening-balance" ? "Saldo awal" : detailItem.sourceTransactionId} />
+              </DetailSection>
+            </FloatingDetailPanel>
+          ) : null}
         </>
       ) : (
         <div className="mt-5 rounded-md border border-dashed border-border bg-background p-5">

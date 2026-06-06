@@ -8,6 +8,7 @@ import {
   FinancialTargetOverpaymentError,
   InsufficientPaymentAccountBalanceError,
   InvalidPaymentAccountOwnershipError,
+  InvalidAccountTransferError,
   MissingAffectedObjectError,
   MissingPaymentAccountForTransactionError,
   UnsafeReversalError,
@@ -64,6 +65,27 @@ export interface ConfirmConfirmationRequestInput {
   userId: string;
   confirmationRequestId: string;
 }
+
+export type ConfirmationNotification =
+  | {
+      kind: "transaction";
+      title: string;
+      actionLabel: string;
+      amount: number;
+      date: string;
+      paymentAccountName?: string;
+      destinationPaymentAccountName?: string;
+      affectedObject?: string;
+      description: string;
+    }
+  | {
+      kind: "neraca_report";
+      title: string;
+      reportDate: string;
+      totalAktiva: number;
+      totalPasiva: number;
+      reconciliationStatus: string;
+    };
 
 export async function listPendingIntentConfirmations(input: {
   businessId: string;
@@ -137,6 +159,7 @@ function summaryFor(action: ProposedAction): string {
     receivable_payment: "Catat pembayaran piutang",
     owner_capital_contribution: "Catat modal pemilik",
     owner_withdrawal: "Catat ambil uang usaha",
+    account_transfer: "Catat transfer antar akun",
     reversal: "Catat pembalikan transaksi",
   };
 
@@ -159,6 +182,51 @@ function parseAction(value: unknown): ProposedAction {
   return parseProposedActionJson(value);
 }
 
+export function buildTransactionConfirmationNotification(action: ProposedAction): ConfirmationNotification {
+  const actionLabels: Record<ProposedAction["intent"], string> = {
+    sales_income: "Penjualan",
+    general_expense: "Biaya usaha",
+    inventory_purchase_value: "Pembelian stok",
+    asset_record_or_purchase: "Aset usaha",
+    liability_created: "Utang baru",
+    liability_payment: "Pembayaran utang",
+    receivable_created: "Piutang baru",
+    receivable_payment: "Pembayaran piutang",
+    owner_capital_contribution: "Modal pemilik",
+    owner_withdrawal: "Ambil uang usaha",
+    account_transfer: "Transfer antar akun",
+    reversal: "Pembalikan transaksi",
+  };
+
+  return {
+    kind: "transaction",
+    title: "Transaksi disimpan",
+    actionLabel: actionLabels[action.intent],
+    amount: action.amount,
+    date: action.date,
+    ...(action.paymentAccountName ? { paymentAccountName: action.paymentAccountName } : {}),
+    ...(action.destinationPaymentAccountName ? { destinationPaymentAccountName: action.destinationPaymentAccountName } : {}),
+    ...(action.affectedObject ? { affectedObject: action.affectedObject } : {}),
+    description: action.description,
+  };
+}
+
+export function buildNeracaConfirmationNotification(report: {
+  reportDate: string;
+  totalAktiva: string | number;
+  totalPasiva: string | number;
+  reconciliationStatus: string;
+}): ConfirmationNotification {
+  return {
+    kind: "neraca_report",
+    title: "Laporan disimpan",
+    reportDate: report.reportDate,
+    totalAktiva: Number(report.totalAktiva),
+    totalPasiva: Number(report.totalPasiva),
+    reconciliationStatus: report.reconciliationStatus,
+  };
+}
+
 function toConfirmationStateError(error: unknown): InvalidConfirmationStateError | null {
   if (error instanceof MissingPaymentAccountForTransactionError) {
     return new InvalidConfirmationStateError(error.message, "PAYMENT_ACCOUNT_REQUIRED");
@@ -167,6 +235,9 @@ function toConfirmationStateError(error: unknown): InvalidConfirmationStateError
     return new InvalidConfirmationStateError(error.message, "INSUFFICIENT_BALANCE");
   }
   if (error instanceof InvalidPaymentAccountOwnershipError) {
+    return new InvalidConfirmationStateError(error.message, "PAYMENT_ACCOUNT_INVALID");
+  }
+  if (error instanceof InvalidAccountTransferError) {
     return new InvalidConfirmationStateError(error.message, "PAYMENT_ACCOUNT_INVALID");
   }
   if (error instanceof MissingAffectedObjectError) {
@@ -374,7 +445,13 @@ export async function cancelConfirmationRequest(
 
 export async function confirmConfirmationRequest(
   input: ConfirmConfirmationRequestInput,
-): Promise<{ transactionId?: string; neracaReportId?: string; message: string; type: "transaction" | "neraca_report" }> {
+): Promise<{
+  transactionId?: string;
+  neracaReportId?: string;
+  message: string;
+  type: "transaction" | "neraca_report";
+  notification?: ConfirmationNotification;
+}> {
   const result = await runFinancialWrite(async (tx) => {
     const confirmation = await findConfirmationForUpdate(tx, input);
 
@@ -440,6 +517,7 @@ export async function confirmConfirmationRequest(
         type: "neraca_report" as const,
         neracaReportId: report.id,
         message: "Laporan neraca berhasil disimpan.",
+        notification: buildNeracaConfirmationNotification(report),
       };
     }
 
@@ -455,6 +533,7 @@ export async function confirmConfirmationRequest(
         description: proposedAction.description,
         affectedObject: proposedAction.affectedObject,
         paymentAccountId: proposedAction.paymentAccountId,
+        destinationPaymentAccountId: proposedAction.destinationPaymentAccountId,
         confirmationRequestId: confirmation.id,
         parsedCommandId: confirmation.parsedCommandId,
       });
@@ -482,6 +561,7 @@ export async function confirmConfirmationRequest(
       type: "transaction" as const,
       transactionId: transaction.id,
       message: "Transaksi berhasil disimpan.",
+      notification: buildTransactionConfirmationNotification(proposedAction),
     };
   });
 
@@ -494,6 +574,7 @@ export async function confirmConfirmationRequest(
     transactionId: result.transactionId,
     neracaReportId: result.neracaReportId,
     message: result.message,
+    notification: result.notification,
   };
 }
 

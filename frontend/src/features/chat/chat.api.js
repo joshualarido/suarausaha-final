@@ -9,6 +9,13 @@ export async function parseChatMessage(message) {
   });
 }
 
+export async function querySura(message) {
+  return apiRequest("/api/v1/sura/query", {
+    method: "POST",
+    body: { message },
+  });
+}
+
 export async function undoLatestTransactionViaChat() {
   return parseChatMessage("undo transaksi terakhir");
 }

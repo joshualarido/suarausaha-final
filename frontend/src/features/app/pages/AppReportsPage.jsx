@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarDays, Check, Download, FileText, RefreshCw, Save, Scale, UserRound } from "lucide-react";
+import { CalendarDays, Check, Download, FileText, RefreshCw, Save, Scale, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DetailMoneyRow, DetailRow, DetailSection, FloatingDetailPanel } from "@/features/app/components/FloatingDetailPanel";
+import { LoadingState } from "@/features/app/components/LoadingState";
+import { RowDetailButton } from "@/features/app/components/RowDetailButton";
 import { formatIdr } from "@/features/app/chat-normalizers";
 import {
   createNeracaSnapshot,
@@ -101,9 +104,11 @@ export function AppReportsPage() {
   const [activeReport, setActiveReport] = useState(null);
   const [savedReports, setSavedReports] = useState([]);
   const [selectedReportId, setSelectedReportId] = useState("");
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [status, setStatus] = useState("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   const columns = useMemo(() => buildColumns(activeReport), [activeReport]);
   const isSavedReport = Boolean(activeReport?.id);
@@ -171,6 +176,7 @@ export function AppReportsPage() {
     let mounted = true;
 
     async function loadInitial() {
+      setIsInitialLoading(true);
       try {
         const items = await loadSavedReports();
         if (!mounted) return;
@@ -179,11 +185,18 @@ export function AppReportsPage() {
           setSelectedReportId(items[0].id);
           setReportDate(items[0].reportDate);
         } else {
-          await handlePreview(todayIso());
+          const previewPayload = await previewNeraca(todayIso());
+          if (!mounted) return;
+          setActiveReport(previewPayload.data);
+          setSelectedReportId("");
         }
       } catch (error) {
         if (mounted) {
           setErrorMessage(error.message || "Laporan neraca belum bisa dimuat.");
+        }
+      } finally {
+        if (mounted) {
+          setIsInitialLoading(false);
         }
       }
     }
@@ -194,6 +207,10 @@ export function AppReportsPage() {
       mounted = false;
     };
   }, []);
+
+  if (isInitialLoading) {
+    return <LoadingState title="Memuat laporan neraca..." description="Mohon tunggu sebentar." />;
+  }
 
   return (
     <div className="mx-auto grid w-full max-w-7xl gap-4">
@@ -210,7 +227,7 @@ export function AppReportsPage() {
       </header>
 
       <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,1fr)_auto] lg:items-end">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
             <p className="su-type-ui text-foreground">Pilih Laporan Neraca</p>
             <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -238,11 +255,6 @@ export function AppReportsPage() {
             </div>
           </div>
 
-          <div className="flex min-h-12 items-center gap-2 rounded-lg border border-[#D4E1F0] bg-secondary/30 px-3 text-sm text-muted-foreground">
-            <AlertCircle className="h-4 w-4 text-primary" />
-            <span>Laporan ini bersifat snapshot dan tidak berubah setelah dibuat.</span>
-          </div>
-
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" disabled={status === "loading"} onClick={() => handlePreview()}>
               <RefreshCw className="h-4 w-4" />
@@ -267,18 +279,21 @@ export function AppReportsPage() {
       ) : null}
 
       {activeReport && columns ? (
-        <section className="rounded-lg border border-border bg-card p-4 shadow-sm md:p-5">
+        <section className="group rounded-lg border border-border bg-card p-4 shadow-sm md:p-5">
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="su-type-section-title text-foreground">Ringkasan Neraca</h2>
               <p className="su-type-body mt-1 text-muted-foreground">Per {formatDateId(activeReport.reportDate)}</p>
             </div>
-            <div className="grid gap-1 text-left md:text-right">
-              <span className={`inline-flex w-fit items-center gap-1 rounded-md px-3 py-1 text-sm md:ml-auto ${isBalanced ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>
-                <Check className="h-4 w-4" />
-                {isBalanced ? "Seimbang" : "Tidak seimbang"}
-              </span>
-              <p className="su-type-body text-muted-foreground">Total Aktiva = Total Utang + Total Ekuitas</p>
+            <div className="flex items-start gap-2 md:justify-end">
+              <div className="grid gap-1 text-left md:text-right">
+                <span className={`inline-flex w-fit items-center gap-1 rounded-md px-3 py-1 text-sm md:ml-auto ${isBalanced ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>
+                  <Check className="h-4 w-4" />
+                  {isBalanced ? "Seimbang" : "Tidak seimbang"}
+                </span>
+                <p className="su-type-body text-muted-foreground">Total Aktiva = Total Utang + Total Ekuitas</p>
+              </div>
+              <RowDetailButton onClick={() => setIsDetailOpen(true)} />
             </div>
           </div>
 
@@ -345,6 +360,28 @@ export function AppReportsPage() {
             </div>
           </div>
         </section>
+      ) : null}
+
+      {isDetailOpen && activeReport ? (
+        <FloatingDetailPanel title="Detail laporan neraca" subtitle={`Per ${formatDateId(activeReport.reportDate)}`} onClose={() => setIsDetailOpen(false)}>
+          <DetailSection title="Snapshot">
+            <DetailRow label="Status" value={isBalanced ? "Seimbang" : "Tidak seimbang"} />
+            <DetailRow label="Tanggal laporan" value={formatDateId(activeReport.reportDate)} />
+            <DetailRow label="Dibuat" value={formatDateTimeId(activeReport.generatedAt)} />
+            <DetailRow label="Dibuat oleh" value={activeReport.generatedBy?.name ?? session.user?.name ?? "-"} />
+          </DetailSection>
+          <DetailSection title="Nilai utama">
+            <DetailMoneyRow label="Total aktiva" value={activeReport.equation?.totalAktiva ?? activeReport.aktiva?.total} />
+            <DetailMoneyRow label="Total utang" value={activeReport.equation?.totalUtang ?? activeReport.utang?.total} />
+            <DetailMoneyRow label="Total ekuitas" value={activeReport.equation?.totalEkuitas ?? activeReport.ekuitas?.total} />
+            <DetailMoneyRow label="Total pasiva" value={activeReport.equation?.totalPasiva} />
+            <DetailMoneyRow label="Selisih" value={activeReport.equation?.difference ?? 0} />
+          </DetailSection>
+          <DetailSection title="Catatan">
+            <DetailRow label="Sumber" value={activeReport.notes?.source ?? "Data terkonfirmasi"} />
+            <DetailRow label="Peringatan" value={activeReport.warningText ?? "Tidak ada peringatan."} />
+          </DetailSection>
+        </FloatingDetailPanel>
       ) : null}
     </div>
   );

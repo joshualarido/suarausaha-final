@@ -10,6 +10,7 @@ vi.mock("../src/features/transactions/transaction.service.js", () => {
   class InvalidPaymentAccountOwnershipError extends Error {}
   class MissingPaymentAccountForTransactionError extends Error {}
   class InsufficientPaymentAccountBalanceError extends Error {}
+  class InvalidAccountTransferError extends Error {}
   class MissingAffectedObjectError extends Error {}
   class FinancialTargetNotFoundError extends Error {}
   class AmbiguousFinancialTargetError extends Error {}
@@ -19,6 +20,7 @@ vi.mock("../src/features/transactions/transaction.service.js", () => {
   return {
     createBaseTransactionInTransaction: vi.fn(),
     InvalidPaymentAccountOwnershipError,
+    InvalidAccountTransferError,
     MissingPaymentAccountForTransactionError,
     InsufficientPaymentAccountBalanceError,
     MissingAffectedObjectError,
@@ -229,6 +231,48 @@ describe("confirmation service", () => {
       expect.objectContaining({
         type: "inventory_purchase_value",
         affectedObject: "Stok ayam",
+      }),
+    );
+  });
+
+  it("passes destination account into the transaction effects engine when confirming a transfer", async () => {
+    const { tx } = buildTx({
+      proposedActionJson: {
+        intent: "account_transfer",
+        amount: 200_000,
+        date: "2026-06-06",
+        paymentAccountId: "acct_cash",
+        paymentAccountName: "Kas",
+        destinationPaymentAccountId: "acct_bca",
+        destinationPaymentAccountName: "BCA",
+        description: "Pindah uang dari Kas ke BCA",
+        affectedObject: "BCA",
+        expectedEffects: ["Kas berkurang Rp200.000", "BCA bertambah Rp200.000"],
+        warning: "Saldo akun asal akan diperiksa lagi sebelum disimpan.",
+      },
+    });
+    vi.mocked(runFinancialWrite).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(createBaseTransactionInTransaction).mockResolvedValue({
+      id: "txn_transfer_123",
+    } as never);
+
+    const result = await confirmConfirmationRequest({
+      businessId: "biz_123",
+      userId: "user_123",
+      confirmationRequestId: "confirm_123",
+    });
+
+    expect(result.notification).toMatchObject({
+      actionLabel: "Transfer antar akun",
+      paymentAccountName: "Kas",
+      destinationPaymentAccountName: "BCA",
+    });
+    expect(createBaseTransactionInTransaction).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        type: "account_transfer",
+        paymentAccountId: "acct_cash",
+        destinationPaymentAccountId: "acct_bca",
       }),
     );
   });

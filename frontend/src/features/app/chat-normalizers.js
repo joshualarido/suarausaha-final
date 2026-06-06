@@ -9,6 +9,7 @@ const intentLabels = {
   receivable_payment: "Pembayaran piutang",
   owner_capital_contribution: "Modal pemilik",
   owner_withdrawal: "Ambil uang usaha",
+  account_transfer: "Transfer antar akun",
   reversal: "Pembalikan transaksi",
 };
 
@@ -54,6 +55,8 @@ export function normalizeProposedAction(value) {
     date: parsed.date,
     paymentAccountId: parsed.paymentAccountId ?? null,
     paymentAccountName: parsed.paymentAccountName ?? null,
+    destinationPaymentAccountId: parsed.destinationPaymentAccountId ?? null,
+    destinationPaymentAccountName: parsed.destinationPaymentAccountName ?? null,
     affectedObject: parsed.affectedObject ?? null,
     description: parsed.description,
     expectedEffects: Array.isArray(parsed.expectedEffects) ? parsed.expectedEffects.filter((effect) => typeof effect === "string") : [],
@@ -163,6 +166,25 @@ export function hydrateChatItemsFromThread(messages) {
               },
             };
           }
+        }
+
+        if (
+          content.status === "analytics_answer" ||
+          content.status === "help" ||
+          content.status === "unsupported"
+        ) {
+          return {
+            id: messageItem.id,
+            role: "assistant",
+            type: "sura_answer",
+            data: {
+              intent: String(content.intent ?? content.status),
+              status: String(content.status),
+              message: String(content.message ?? ""),
+              data: content.data && typeof content.data === "object" ? content.data : {},
+              warnings: Array.isArray(content.warnings) ? content.warnings.filter((warning) => typeof warning === "string") : [],
+            },
+          };
         }
 
         return {

@@ -34,6 +34,7 @@ vi.mock("../src/features/transactions/transaction.service.js", () => {
       "receivable_payment",
       "owner_capital_contribution",
       "owner_withdrawal",
+      "account_transfer",
       "reversal",
     ],
     listTransactionHistoryByBusinessId: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("../src/features/transactions/transaction.service.js", () => {
     getAssetSummaryByBusinessId: vi.fn(),
     getLiabilitySummaryByBusinessId: vi.fn(),
     getReceivableSummaryByBusinessId: vi.fn(),
+    getTransactionDetailByBusinessId: vi.fn(),
   };
 });
 
@@ -52,6 +54,7 @@ import {
   getInventorySummaryByBusinessId,
   getLiabilitySummaryByBusinessId,
   getReceivableSummaryByBusinessId,
+  getTransactionDetailByBusinessId,
   listTransactionHistoryByBusinessId,
 } from "../src/features/transactions/transaction.service.js";
 
@@ -97,6 +100,7 @@ describe("transaction read routes", () => {
             id: "acct_cash",
             name: "Kas",
           },
+          cashDirection: "in",
           createdAt: new Date("2026-05-24T10:00:00Z"),
         },
       ],
@@ -113,9 +117,32 @@ describe("transaction read routes", () => {
       page: 2,
       limit: 10,
       type: "sales_income",
+      sortBy: "date",
+      sortDirection: "desc",
     });
     expect(response.body.success).toBe(true);
     expect(response.body.data.total).toBe(11);
+    expect(response.body.data.items[0].cashDirection).toBe("in");
+  });
+
+  it("passes transaction sort options to the history service", async () => {
+    vi.mocked(listTransactionHistoryByBusinessId).mockResolvedValue({
+      items: [],
+      page: 1,
+      limit: 20,
+      total: 0,
+    } as never);
+
+    const response = await request(app).get("/api/v1/transactions?sortBy=amount&sortDirection=asc");
+
+    expect(response.status).toBe(200);
+    expect(listTransactionHistoryByBusinessId).toHaveBeenCalledWith({
+      businessId: "biz_123",
+      page: 1,
+      limit: 20,
+      sortBy: "amount",
+      sortDirection: "asc",
+    });
   });
 
   it("returns validation error for invalid transaction query", async () => {
@@ -123,6 +150,97 @@ describe("transaction read routes", () => {
 
     expect(response.status).toBe(400);
     expect(listTransactionHistoryByBusinessId).not.toHaveBeenCalled();
+  });
+
+  it("returns validation error for invalid transaction sort options", async () => {
+    const response = await request(app).get("/api/v1/transactions?sortBy=paymentAccount&sortDirection=sideways");
+
+    expect(response.status).toBe(400);
+    expect(listTransactionHistoryByBusinessId).not.toHaveBeenCalled();
+  });
+
+  it("returns transaction detail with audit fields and sales inventory limitation note", async () => {
+    vi.mocked(getTransactionDetailByBusinessId).mockResolvedValue({
+      id: "txn_sales_1",
+      type: "sales_income",
+      amount: 500_000,
+      date: "2026-06-05",
+      description: "Jual ayam geprek 500 ribu tunai",
+      status: "confirmed",
+      isReversed: false,
+      cashDirection: "in",
+      affectedObject: "Ayam Geprek",
+      paymentAccount: { id: "acct_cash", name: "Kas" },
+      captureMode: "auto_fast",
+      rawInputText: "Jual ayam geprek 500 ribu tunai",
+      interpretedAction: {
+        intent: "sales_income",
+        amount: 500_000,
+        date: "2026-06-05",
+        paymentAccountName: "Kas",
+        description: "Jual ayam geprek 500 ribu tunai",
+      },
+      expectedEffects: ["Kas bertambah Rp500.000", "Pendapatan bertambah Rp500.000"],
+      effects: [
+        {
+          targetType: "payment_account",
+          effectType: "payment_account_change",
+          direction: "increase",
+          amount: 500_000,
+          beforeAmount: 0,
+          afterAmount: 500_000,
+        },
+        {
+          targetType: "business_bucket",
+          effectType: "income",
+          direction: "increase",
+          amount: 500_000,
+          beforeAmount: 0,
+          afterAmount: 500_000,
+        },
+      ],
+      notes: ["Penjualan tidak otomatis mengurangi stok."],
+      inventoryDecrease: {
+        hasDecrease: false,
+        amount: 0,
+      },
+      createdAt: new Date("2026-06-05T10:00:00Z"),
+    } as never);
+
+    const response = await request(app).get("/api/v1/transactions/txn_sales_1");
+
+    expect(response.status).toBe(200);
+    expect(getTransactionDetailByBusinessId).toHaveBeenCalledWith({
+      businessId: "biz_123",
+      transactionId: "txn_sales_1",
+    });
+    expect(response.body.data).toMatchObject({
+      id: "txn_sales_1",
+      rawInputText: "Jual ayam geprek 500 ribu tunai",
+      captureMode: "auto_fast",
+      status: "confirmed",
+      paymentAccount: { name: "Kas" },
+      inventoryDecrease: {
+        hasDecrease: false,
+        amount: 0,
+      },
+      notes: ["Penjualan tidak otomatis mengurangi stok."],
+    });
+  });
+
+  it("returns 404 for missing transaction detail", async () => {
+    vi.mocked(getTransactionDetailByBusinessId).mockResolvedValue(null as never);
+
+    const response = await request(app).get("/api/v1/transactions/missing_txn");
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      success: false,
+      error: {
+        code: "NOT_FOUND",
+        message: "Transaction not found.",
+      },
+    });
   });
 
   it("returns inventory summary", async () => {

@@ -13,6 +13,7 @@ import {
   createBaseTransactionInTransaction,
   FinancialTargetNotFoundError,
   FinancialTargetOverpaymentError,
+  InvalidAccountTransferError,
   InvalidTransactionAmountError,
   MissingAffectedObjectError,
   MissingPaymentAccountForTransactionError,
@@ -21,6 +22,7 @@ import {
 function buildTx(options?: {
   currentBalance?: string;
   hasAccount?: boolean;
+  paymentAccounts?: Array<Record<string, unknown>>;
   menuItems?: Array<Record<string, unknown>>;
   liabilities?: Array<Record<string, unknown>>;
   receivables?: Array<Record<string, unknown>>;
@@ -29,7 +31,7 @@ function buildTx(options?: {
     paymentAccounts:
       options?.hasAccount === false
         ? []
-        : [
+        : options?.paymentAccounts ?? [
             {
               id: "acct_cash",
               businessId: "biz_123",
@@ -46,6 +48,7 @@ function buildTx(options?: {
     assets: [] as Array<Record<string, unknown>>,
     corrections: [] as Array<Record<string, unknown>>,
     updatedBalance: null as string | null,
+    updatedBalances: {} as Record<string, string>,
     insertedTransaction: null as Record<string, unknown> | null,
   };
 
@@ -114,6 +117,9 @@ function buildTx(options?: {
               Object.assign(row, values);
               if (table === "payment_accounts" && typeof values.currentBalance === "string") {
                 state.updatedBalance = values.currentBalance;
+                if (typeof row.id === "string") {
+                  state.updatedBalances[row.id] = values.currentBalance;
+                }
               }
             }
             return row ?? {};
@@ -248,6 +254,73 @@ describe("transaction service", () => {
         expect.objectContaining({ targetType: "business_bucket", effectType: "expense", amount: "100000" }),
       ]),
     );
+  });
+
+  it("moves money between payment accounts without income or expense effects", async () => {
+    const { tx, state } = buildTx({
+      paymentAccounts: [
+        { id: "acct_cash", businessId: "biz_123", name: "Kas", currentBalance: "500000" },
+        { id: "acct_bca", businessId: "biz_123", name: "BCA", currentBalance: "100000" },
+      ],
+    });
+
+    await createBaseTransactionInTransaction(tx as never, {
+      businessId: "biz_123",
+      createdBy: "user_123",
+      type: "account_transfer",
+      amount: 200_000,
+      transactionDate: "2026-05-12",
+      description: "Pindah uang dari Kas ke BCA",
+      paymentAccountId: "acct_cash",
+      destinationPaymentAccountId: "acct_bca",
+    });
+
+    expect(state.updatedBalances).toMatchObject({
+      acct_cash: "300000",
+      acct_bca: "300000",
+    });
+    expect(state.insertedTransaction).toMatchObject({
+      type: "account_transfer",
+      paymentAccountId: "acct_cash",
+    });
+    expect(state.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetType: "payment_account",
+          targetId: "acct_cash",
+          effectType: "account_transfer",
+          direction: "decrease",
+          amount: "200000",
+        }),
+        expect.objectContaining({
+          targetType: "payment_account",
+          targetId: "acct_bca",
+          effectType: "account_transfer",
+          direction: "increase",
+          amount: "200000",
+        }),
+      ]),
+    );
+    expect(state.effects.some((effect) => effect.targetType === "business_bucket")).toBe(false);
+  });
+
+  it("rejects transfer to the same payment account", async () => {
+    const { tx, state } = buildTx({ currentBalance: "500000" });
+
+    await expect(
+      createBaseTransactionInTransaction(tx as never, {
+        businessId: "biz_123",
+        createdBy: "user_123",
+        type: "account_transfer",
+        amount: 100_000,
+        transactionDate: "2026-05-12",
+        description: "Pindah uang kas",
+        paymentAccountId: "acct_cash",
+        destinationPaymentAccountId: "acct_cash",
+      }),
+    ).rejects.toBeInstanceOf(InvalidAccountTransferError);
+
+    expect(state.insertedTransaction).toBeNull();
   });
 
   it("moves cash into inventory for inventory purchase without creating expense", async () => {

@@ -91,6 +91,14 @@ export const SUPPORTED_INTENT_CATALOG: IntentCatalogItem[] = [
     moneyDirection: "out",
   },
   {
+    intent: "account_transfer",
+    label: "Transfer antar akun",
+    meaning: "Memindahkan uang dari satu akun pembayaran usaha ke akun pembayaran usaha lain.",
+    requiredFields: ["amount", "date", "description", "paymentAccountId", "destinationPaymentAccountId"],
+    examples: ["pindah 500 ribu dari Kas ke BCA", "transfer 1 juta dari QRIS ke Bank"],
+    moneyDirection: "none_or_contextual",
+  },
+  {
     intent: "reversal",
     label: "Batalkan/balik transaksi",
     meaning: "Membatalkan atau membalik transaksi yang sudah pernah dicatat.",

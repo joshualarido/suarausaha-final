@@ -93,6 +93,81 @@ function resolveDeterministicPaymentAccount(input: ParseIntentInput) {
   );
 }
 
+function findPaymentAccountByText(input: ParseIntentInput, value: string) {
+  const normalizedValue = normalizeSearchText(value);
+  if (!normalizedValue) return null;
+
+  const matches = input.paymentAccounts.filter((account) => {
+    const normalizedName = normalizeSearchText(account.name);
+    const normalizedId = normalizeSearchText(account.id);
+    return normalizedValue === normalizedName || normalizedValue === normalizedId || normalizedValue.includes(normalizedName);
+  });
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function parseAccountTransfer(input: ParseIntentInput, amount: number): ParseIntentResult | null {
+  const normalized = normalizeInput(input.message);
+  const isTransfer =
+    /\b(pindah|transfer|mutasi|geser)\b/.test(normalized) && /\bdari\b/.test(normalized) && /\b(ke|menuju)\b/.test(normalized);
+  if (!isTransfer) return null;
+
+  const accountMatch = input.message.match(/\bdari\s+(.+?)\s+(?:ke|menuju)\s+(.+)$/i);
+  const sourceText = accountMatch?.[1]?.trim() ?? "";
+  const destinationText = accountMatch?.[2]?.trim() ?? "";
+  const sourceAccount = findPaymentAccountByText(input, sourceText);
+  const destinationAccount = findPaymentAccountByText(input, destinationText);
+
+  if (!sourceAccount || !destinationAccount) {
+    return {
+      status: "needs_clarification",
+      proposedAction: null,
+      missingFields: [
+        ...(!sourceAccount ? ["paymentAccountId"] : []),
+        ...(!destinationAccount ? ["destinationPaymentAccountId"] : []),
+      ],
+      validationErrors: [],
+      question: "Transfernya dari akun mana ke akun mana?",
+      options: input.paymentAccounts.map((account) => ({ label: account.name, value: account.id })),
+      confidence: 0.72,
+      parserModel: PARSER_MODEL,
+      parserVersion: PARSER_VERSION,
+      structuredPayload: {
+        rawInputText: input.message,
+        detectedIntent: "account_transfer",
+        sourceText,
+        destinationText,
+      },
+    };
+  }
+
+  const formattedAmount = formatIdr(amount);
+  const proposedAction: ProposedAction = {
+    intent: "account_transfer",
+    amount,
+    date: input.today,
+    paymentAccountId: sourceAccount.id,
+    paymentAccountName: sourceAccount.name,
+    destinationPaymentAccountId: destinationAccount.id,
+    destinationPaymentAccountName: destinationAccount.name,
+    description: baseDescription(input.message),
+    affectedObject: destinationAccount.name,
+    expectedEffects: [`${sourceAccount.name} berkurang ${formattedAmount}`, `${destinationAccount.name} bertambah ${formattedAmount}`],
+    warning: "Saldo akun asal akan diperiksa lagi sebelum disimpan.",
+  };
+
+  return {
+    status: "parsed",
+    proposedAction,
+    missingFields: [],
+    validationErrors: [],
+    confidence: 0.88,
+    parserModel: PARSER_MODEL,
+    parserVersion: PARSER_VERSION,
+    structuredPayload: proposedAction,
+  };
+}
+
 function findMatchingMenuItems(message: string, menuItems: ParserMenuItemContext[]): ParserMenuItemContext[] {
   const normalizedMessage = normalizeSearchText(message);
 
@@ -163,6 +238,12 @@ function classifyIntent(message: string): ProposedAction["intent"] | "ambiguous_
 export function createDeterministicIntentParser(): IntentParser {
   return {
     async parse(input: ParseIntentInput): Promise<ParseIntentResult> {
+      const amount = parseAmount(input.message);
+      if (amount !== null) {
+        const transferResult = parseAccountTransfer(input, amount);
+        if (transferResult) return transferResult;
+      }
+
       const ambiguityResult = createInventoryOrExpenseClarification(input);
       if (ambiguityResult) return ambiguityResult;
 
@@ -271,8 +352,6 @@ export function createDeterministicIntentParser(): IntentParser {
           structuredPayload: proposedAction,
         };
       }
-
-      const amount = parseAmount(input.message);
 
       if (!amount) {
         return {

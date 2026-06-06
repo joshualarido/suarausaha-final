@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { TransactionRow } from "../../lib/database.js";
 import { runFinancialWrite, type FinancialWriteTx } from "../../lib/financial-write.js";
 import {
+  InvalidAccountTransferError,
   affectedObjectOrDescription,
   requireAffectedObject,
   validateBaseTransactionInput,
@@ -15,6 +16,7 @@ import {
   createInventoryRecord,
   createLiabilityRecord,
   createReceivableRecord,
+  getPaymentAccountByIdForUpdate,
   getPaymentAccountForUpdate,
   insertIncomeOrExpenseEffect,
   resolveLiabilityForPayment,
@@ -76,6 +78,23 @@ export async function createBaseTransactionInTransaction(
   const now = new Date();
   const amount = BigInt(input.amount);
   const paymentAccount = await getPaymentAccountForUpdate(tx, input);
+  const destinationPaymentAccount =
+    input.type === "account_transfer" && input.destinationPaymentAccountId
+      ? await getPaymentAccountByIdForUpdate(tx, {
+          businessId: input.businessId,
+          paymentAccountId: input.destinationPaymentAccountId,
+        })
+      : null;
+
+  if (input.type === "account_transfer") {
+    if (!input.destinationPaymentAccountId || !destinationPaymentAccount) {
+      throw new InvalidAccountTransferError("Akun tujuan transfer harus dipilih.");
+    }
+    if (input.paymentAccountId === input.destinationPaymentAccountId) {
+      throw new InvalidAccountTransferError();
+    }
+  }
+
   validatePaymentAccountAvailability(input.type, amount, paymentAccount);
   await validateSalesCatalogItem(tx, input);
   const targetName = input.affectedObject?.trim();
@@ -243,6 +262,22 @@ export async function createBaseTransactionInTransaction(
         now,
       });
       await insertIncomeOrExpenseEffect(tx, { transaction, effectType: "owner_withdrawal", amount, now });
+      break;
+    case "account_transfer":
+      await applyPaymentAccountEffect(tx, {
+        transaction,
+        paymentAccount,
+        delta: -amount,
+        effectType: "account_transfer",
+        now,
+      });
+      await applyPaymentAccountEffect(tx, {
+        transaction,
+        paymentAccount: destinationPaymentAccount,
+        delta: amount,
+        effectType: "account_transfer",
+        now,
+      });
       break;
   }
 

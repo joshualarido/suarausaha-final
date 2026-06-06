@@ -7,6 +7,7 @@ import {
   getInventorySummaryByBusinessId,
   getLiabilitySummaryByBusinessId,
   getReceivableSummaryByBusinessId,
+  getTransactionDetailByBusinessId,
   listTransactionHistoryByBusinessId,
   TRANSACTION_TYPES,
 } from "./transaction.service.js";
@@ -25,6 +26,8 @@ const transactionHistoryQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  sortBy: z.enum(["date", "amount", "type", "status", "createdAt"]).default("date"),
+  sortDirection: z.enum(["asc", "desc"]).default("desc"),
 });
 
 const transactionRouter = Router();
@@ -66,6 +69,32 @@ transactionRouter.get("/transactions", requireAuth, async (req, res) => {
     businessId: business.id,
     ...parseResult.data,
   });
+
+  res.json({
+    success: true,
+    data,
+  });
+});
+
+transactionRouter.get("/transactions/:transactionId", requireAuth, async (req, res) => {
+  const business = await resolveBusinessOrRespond(req.user!.id, res);
+  if (!business) return;
+
+  const data = await getTransactionDetailByBusinessId({
+    businessId: business.id,
+    transactionId: Array.isArray(req.params.transactionId) ? req.params.transactionId[0] : req.params.transactionId,
+  });
+
+  if (!data) {
+    res.status(404).json({
+      success: false,
+      error: {
+        code: "NOT_FOUND",
+        message: "Transaction not found.",
+      },
+    });
+    return;
+  }
 
   res.json({
     success: true,

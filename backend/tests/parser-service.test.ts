@@ -196,4 +196,34 @@ describe("deterministic intent parser", () => {
       { label: "Biaya langsung", value: "general_expense" },
     ]);
   });
+
+  it("parses account transfers with source and destination payment accounts", async () => {
+    const parser = createDeterministicIntentParser();
+
+    const result = await parser.parse({
+      message: "pindah 200 ribu dari Kas ke BCA",
+      businessId: "biz_123",
+      userId: "user_123",
+      today: "2026-06-06",
+      defaultPaymentAccountId: "acct_cash",
+      defaultPaymentAccountName: "Kas",
+      paymentAccounts: [
+        { id: "acct_cash", name: "Kas", type: "cash", isDefault: true },
+        { id: "acct_bca", name: "BCA", type: "non_cash", isDefault: false },
+      ],
+      menuItems: [],
+    });
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent: "account_transfer",
+      amount: 200_000,
+      paymentAccountId: "acct_cash",
+      paymentAccountName: "Kas",
+      destinationPaymentAccountId: "acct_bca",
+      destinationPaymentAccountName: "BCA",
+      expectedEffects: ["Kas berkurang Rp200.000", "BCA bertambah Rp200.000"],
+      warning: "Saldo akun asal akan diperiksa lagi sebelum disimpan.",
+    });
+  });
 });
