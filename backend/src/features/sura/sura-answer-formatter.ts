@@ -17,14 +17,6 @@ export function formatIdr(value: number): string {
   return `${sign}Rp${Math.abs(safeValue).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
 }
 
-function joinItemLabels(items: Array<{ name: string; amount: number }>): string {
-  if (!items.length) return "";
-  return items
-    .slice(0, 5)
-    .map((item) => `${item.name} ${formatIdr(item.amount)}`)
-    .join(", ");
-}
-
 export function formatSuraAnswer(input: {
   intent: SuraAnalyticsIntent;
   dateLabel?: string;
@@ -85,29 +77,23 @@ export function formatSuraAnswer(input: {
       };
     }
     return {
-      answer: `Transaksi terakhir: ${items.map((item) => `${item.date} - ${item.description} ${formatIdr(item.amount)}`).join("; ")}.`,
+      answer: "Berikut transaksi terakhir yang sudah terkonfirmasi.",
       warnings,
     };
   }
 
   if (input.intent === "outstanding_liabilities") {
     const items = (input.result.items ?? []) as Array<{ name: string; amount: number }>;
-    const list = joinItemLabels(items);
     return {
-      answer: list
-        ? `Total utang yang belum lunas ${formatIdr(Number(input.result.totalOutstanding ?? 0))}. Rinciannya: ${list}.`
-        : "Tidak ada utang aktif yang belum lunas.",
+      answer: items.length ? `Total utang yang belum lunas ${formatIdr(Number(input.result.totalOutstanding ?? 0))}.` : "Tidak ada utang aktif yang belum lunas.",
       warnings,
     };
   }
 
   if (input.intent === "outstanding_receivables") {
     const items = (input.result.items ?? []) as Array<{ name: string; amount: number }>;
-    const list = joinItemLabels(items);
     return {
-      answer: list
-        ? `Total piutang yang belum dibayar ${formatIdr(Number(input.result.totalOutstanding ?? 0))}. Rinciannya: ${list}.`
-        : "Tidak ada piutang aktif yang belum dibayar.",
+      answer: items.length ? `Total piutang yang belum dibayar ${formatIdr(Number(input.result.totalOutstanding ?? 0))}.` : "Tidak ada piutang aktif yang belum dibayar.",
       warnings,
     };
   }

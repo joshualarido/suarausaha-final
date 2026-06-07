@@ -103,7 +103,9 @@ function renderNamedList(intent, data) {
   );
 }
 
-function renderRecentTransactions(data) {
+function renderRecentTransactions(intent, data) {
+  if (intent !== "recent_transactions") return null;
+
   const items = Array.isArray(data.items) ? data.items : [];
   if (!items.length) return null;
 
@@ -148,7 +150,7 @@ export function SuraAnswerCard({ item }) {
           </div>
         </div>
 
-        {renderRecentTransactions(data)}
+        {renderRecentTransactions(intent, data)}
         {renderNamedList(intent, data)}
         <div className="mt-3">{renderMetrics(intent, data)}</div>
 

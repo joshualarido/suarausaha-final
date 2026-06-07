@@ -114,8 +114,33 @@ function isHelp(message: string): boolean {
   return /\b(help|bantuan|bisa\s+apa|apa\s+yang\s+bisa|cara\s+pakai)\b/.test(message);
 }
 
+function hasAmountSignal(message: string): boolean {
+  return (
+    /\b\d+(?:[.,]\d+)?\s*(?:rb|ribu|jt|juta|k)\b/.test(message) ||
+    /\b\d{4,}\b/.test(message) ||
+    /\b\d+(?:[.,]\d+)?\b(?!\s*(?:hari|minggu|bulan|tahun|transaksi|terakhir)\b)/.test(message)
+  );
+}
+
+function hasExplicitQueryPhrase(message: string): boolean {
+  return /\b(berapa|lihat|cek|daftar|total|sisa)\b/.test(message) || /\b(yang\s+)?belum\s+(dibayar|lunas)\b/.test(message);
+}
+
+function isReceivableOrLiabilityMutation(message: string): boolean {
+  const hasReceivableOrLiabilityTerm = /\b(piutang|utang|hutang)\b/.test(message);
+
+  if (/\b(piutang|utang|hutang)\s+baru\b/.test(message)) return true;
+  if (/\bjual\s+tempo\b/.test(message) && hasAmountSignal(message)) return true;
+  if (/\bbayar\s+(piutang|utang|hutang)\b/.test(message) && hasAmountSignal(message)) return true;
+  if (/\b(piutang|utang|hutang)\b.*\bbayar\b/.test(message) && hasAmountSignal(message)) return true;
+  if (/\bbelum\s+bayar\b/.test(message) && hasAmountSignal(message)) return true;
+
+  return hasReceivableOrLiabilityTerm && hasAmountSignal(message) && !hasExplicitQueryPhrase(message);
+}
+
 function isWriteAction(message: string): boolean {
   return (
+    isReceivableOrLiabilityMutation(message) ||
     /\b(jual|terjual|beli|bayar|pinjam|utang\s+baru|hutang\s+baru|modal|ambil\s+uang|prive|piutang\s+baru|transfer|pindah|mutasi|geser)\b/.test(message) ||
     /\b(undo|batalkan|batalin|reverse|salah\s+catat)\b/.test(message)
   );
