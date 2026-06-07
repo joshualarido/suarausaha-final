@@ -11,9 +11,7 @@ const pool = new Pool({
   min: 1,
   connectionTimeoutMillis: 10_000,
   ssl: env.DATABASE_URL.includes("sslmode=require") || env.DATABASE_URL.includes("sslmode=required")
-    ? {
-        rejectUnauthorized: false,
-      }
+    ? true
     : undefined,
 });
 

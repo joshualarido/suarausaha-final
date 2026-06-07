@@ -61,6 +61,42 @@ Schema bootstrap is automatic on backend startup. It creates required auth/busin
 4. Try creating second business for same user and verify it is rejected.
 5. In Supabase table editor, verify rows in `User`, `Session`, `Account`, `Business`.
 
+## Render Deployment
+
+This repo includes a Render Blueprint at the repository root.
+
+The Blueprint deploys:
+
+- `suarausaha-api`: Node web service from `backend/`
+- `suarausaha-web`: static Vite frontend from `frontend/`
+
+The database is still Supabase Postgres for this MVP. Set `DATABASE_URL` in Render to the Supabase direct Postgres connection string with `sslmode=require`.
+
+Required Render environment variables for `suarausaha-api`:
+
+- `NODE_ENV=production`
+- `API_BASE_URL=https://suarausaha-api.onrender.com`
+- `FRONTEND_ORIGIN=https://suarausaha-web.onrender.com`
+- `DATABASE_URL`
+- `BETTER_AUTH_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL=gemini-3.1-flash-lite`
+- `PARSER_ENGINE=gemini`
+
+Required Render environment variable for `suarausaha-web`:
+
+- `VITE_API_BASE_URL=https://suarausaha-api.onrender.com`
+
+If Render changes either service URL because the service name is unavailable, update `API_BASE_URL`, `FRONTEND_ORIGIN`, `VITE_API_BASE_URL`, and the Google OAuth redirect URI to match the actual URLs.
+
+Google OAuth production callback:
+
+- `https://suarausaha-api.onrender.com/api/auth/callback/google`
+
+The backend validates production env on startup and exits if required secrets are missing, placeholders are used, Gemini is enabled without an API key, or the database points to localhost.
+
 ## Backup / Restore Notes (for next phases)
 
 - For production later, enable Supabase backups / PITR before cutover.
