@@ -37,6 +37,13 @@ function baseInput(overrides: Partial<ParseIntentInput> = {}): ParseIntentInput 
         defaultPrice: 25_000,
         category: "Makanan",
       },
+      {
+        id: "menu_es_teh",
+        name: "Es Teh",
+        aliases: ["esteh"],
+        defaultPrice: 5_000,
+        category: "Minuman",
+      },
     ],
     openLiabilities: [
       {
@@ -160,6 +167,85 @@ describe("Gemini parser draft validation", () => {
     expect(result.status).toBe("parsed");
     expect(result.proposedAction?.amount).toBe(50_000);
     expect(result.proposedAction?.warning).toContain("Nominal dihitung dari 2 x harga menu Ayam Geprek");
+  });
+
+  it("builds an itemized POS sales order from multiple catalog items", () => {
+    const result = validateParserDraft(
+      baseInput({ message: "jual 3 ayam geprek, 2 es teh" }),
+      baseDraft({
+        amount: null,
+        paymentAccountId: null,
+        paymentAccountName: null,
+        description: "Jual 3 ayam geprek, 2 es teh",
+        affectedObject: null,
+        missingFields: ["amount"],
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent: "sales_income",
+      amount: 85_000,
+      paymentAccountId: "acct_cash",
+      paymentAccountName: "Kas",
+      affectedObject: "Ayam Geprek, Es Teh",
+      salesOrder: {
+        status: "draft",
+        totalAmount: 85_000,
+        lines: [
+          {
+            productId: "menu_ayam_geprek",
+            productName: "Ayam Geprek",
+            quantity: 3,
+            unitPrice: 25_000,
+            subtotal: 75_000,
+          },
+          {
+            productId: "menu_es_teh",
+            productName: "Es Teh",
+            quantity: 2,
+            unitPrice: 5_000,
+            subtotal: 10_000,
+          },
+        ],
+      },
+    });
+    expect(result.proposedAction?.warning).toContain("Akun pembayaran memakai default Kas");
+  });
+
+  it("uses quantities after menu names when the seller says porsi", () => {
+    const result = validateParserDraft(
+      baseInput({ message: "jual ayam geprek 2 porsi, es teh tawar 3 porsi" }),
+      baseDraft({
+        amount: null,
+        paymentAccountId: null,
+        paymentAccountName: null,
+        description: "Jual ayam geprek 2 porsi, es teh tawar 3 porsi",
+        affectedObject: null,
+        missingFields: ["amount"],
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      amount: 65_000,
+      salesOrder: {
+        lines: [
+          expect.objectContaining({
+            productName: "Ayam Geprek",
+            quantity: 2,
+            subtotal: 50_000,
+          }),
+          expect.objectContaining({
+            productName: "Es Teh",
+            quantity: 3,
+            subtotal: 15_000,
+          }),
+        ],
+      },
+    });
   });
 
   it.each([0, -1, 12.5])("rejects invalid amount %s before confirmation", (amount) => {

@@ -232,6 +232,61 @@ describe("transaction service", () => {
     );
   });
 
+  it("accepts itemized POS sales lines and does not create inventory effects", async () => {
+    const { tx, state } = buildTx({
+      currentBalance: "500000",
+      menuItems: [
+        { id: "menu_ayam_geprek", businessId: "biz_123", name: "Ayam Geprek", status: "active" },
+        { id: "menu_es_teh", businessId: "biz_123", name: "Es Teh", status: "active" },
+      ],
+    });
+
+    await createBaseTransactionInTransaction(tx as never, {
+      businessId: "biz_123",
+      createdBy: "user_123",
+      type: "sales_income",
+      amount: 85_000,
+      transactionDate: "2026-05-12",
+      description: "Jual 3 Ayam Geprek, 2 Es Teh",
+      affectedObject: "Ayam Geprek, Es Teh",
+      paymentAccountId: "acct_cash",
+      salesOrder: {
+        status: "draft",
+        totalAmount: 85_000,
+        lines: [
+          {
+            productId: "menu_ayam_geprek",
+            productName: "Ayam Geprek",
+            spokenLabel: "ayam geprek",
+            quantity: 3,
+            unitPrice: 25_000,
+            subtotal: 75_000,
+            matchStatus: "matched",
+          },
+          {
+            productId: "menu_es_teh",
+            productName: "Es Teh",
+            spokenLabel: "es teh",
+            quantity: 2,
+            unitPrice: 5_000,
+            subtotal: 10_000,
+            matchStatus: "matched",
+          },
+        ],
+      },
+    });
+
+    expect(state.updatedBalance).toBe("585000");
+    expect(state.inventory).toHaveLength(0);
+    expect(state.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetType: "payment_account", direction: "increase", amount: "85000" }),
+        expect.objectContaining({ targetType: "business_bucket", effectType: "income", amount: "85000" }),
+      ]),
+    );
+    expect(state.effects).not.toEqual(expect.arrayContaining([expect.objectContaining({ targetType: "inventory" })]));
+  });
+
   it("decreases payment account balance for general expense", async () => {
     const { tx, state } = buildTx({ currentBalance: "500000" });
 

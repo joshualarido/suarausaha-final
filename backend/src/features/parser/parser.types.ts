@@ -25,6 +25,25 @@ export const proposedActionSchema = z.object({
   affectedObject: z.string().trim().nullable(),
   expectedEffects: z.array(z.string().trim().min(1)).min(1),
   warning: z.string().trim().nullable(),
+  salesOrder: z
+    .object({
+      status: z.enum(["draft"]),
+      totalAmount: z.number().int().positive(),
+      lines: z
+        .array(
+          z.object({
+            productId: z.string().min(1),
+            productName: z.string().min(1),
+            spokenLabel: z.string().min(1),
+            quantity: z.number().int().positive(),
+            unitPrice: z.number().int().positive(),
+            subtotal: z.number().int().positive(),
+            matchStatus: z.enum(["matched"]),
+          }),
+        )
+        .min(1),
+    })
+    .optional(),
 });
 
 export type ProposedAction = z.infer<typeof proposedActionSchema>;

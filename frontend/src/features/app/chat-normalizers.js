@@ -61,6 +61,25 @@ export function normalizeProposedAction(value) {
     description: parsed.description,
     expectedEffects: Array.isArray(parsed.expectedEffects) ? parsed.expectedEffects.filter((effect) => typeof effect === "string") : [],
     warning: parsed.warning ?? null,
+    salesOrder:
+      parsed.salesOrder && Array.isArray(parsed.salesOrder.lines)
+        ? {
+            status: parsed.salesOrder.status,
+            totalAmount: Number(parsed.salesOrder.totalAmount ?? parsed.amount),
+            lines: parsed.salesOrder.lines
+              .filter((line) => line && typeof line === "object")
+              .map((line) => ({
+                productId: String(line.productId ?? ""),
+                productName: String(line.productName ?? ""),
+                spokenLabel: String(line.spokenLabel ?? ""),
+                quantity: Number(line.quantity ?? 0),
+                unitPrice: Number(line.unitPrice ?? 0),
+                subtotal: Number(line.subtotal ?? 0),
+                matchStatus: String(line.matchStatus ?? "matched"),
+              }))
+              .filter((line) => line.productId && line.productName && line.quantity > 0),
+          }
+        : null,
   };
 }
 

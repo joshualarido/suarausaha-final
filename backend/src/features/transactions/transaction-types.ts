@@ -28,6 +28,19 @@ export interface CreateBaseTransactionInput {
   confirmationRequestId?: string | null;
   parsedCommandId?: string | null;
   isReversal?: boolean;
+  salesOrder?: {
+    status: "draft";
+    totalAmount: number;
+    lines: Array<{
+      productId: string;
+      productName: string;
+      spokenLabel: string;
+      quantity: number;
+      unitPrice: number;
+      subtotal: number;
+      matchStatus: "matched";
+    }>;
+  };
 }
 
 export class InvalidTransactionAmountError extends Error {

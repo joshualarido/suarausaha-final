@@ -534,6 +534,7 @@ export async function confirmConfirmationRequest(
         affectedObject: proposedAction.affectedObject,
         paymentAccountId: proposedAction.paymentAccountId,
         destinationPaymentAccountId: proposedAction.destinationPaymentAccountId,
+        salesOrder: proposedAction.salesOrder,
         confirmationRequestId: confirmation.id,
         parsedCommandId: confirmation.parsedCommandId,
       });

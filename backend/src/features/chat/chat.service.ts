@@ -5,6 +5,7 @@ import {
   cancelPendingConfirmationsInTransaction,
   createConfirmationRequest,
   createNeracaConfirmationRequest,
+  listPendingIntentConfirmations,
   toConfirmationResponse,
 } from "../confirmations/confirmation.service.js";
 import { previewNeraca, type NeracaSnapshotData } from "../neraca/neraca.service.js";
@@ -12,6 +13,7 @@ import { listActiveMenuItemsByBusinessId } from "../menu-items/menu-item.service
 import { listPaymentAccountsByBusinessId } from "../payment-accounts/payment-account.service.js";
 import { parserEngine } from "../parser/parser-engine.service.js";
 import type { ParseIntentInput, ParseIntentResult, ProposedAction } from "../parser/parser.types.js";
+import { parseProposedActionJson } from "../transactions/transaction-dto.mapper.js";
 import { createInventoryOrExpenseClarification, resolveInventoryOrExpenseClarification } from "../parser/ambiguity.service.js";
 import {
   AmbiguousFinancialTargetError,
@@ -70,7 +72,6 @@ export type ChatParseResponse =
     };
 
 const AUTO_WRITE_INTENTS = new Set<ProposedAction["intent"]>([
-  "sales_income",
   "general_expense",
   "owner_capital_contribution",
   "owner_withdrawal",
@@ -83,6 +84,10 @@ function todayIso(): string {
 
 function normalizeInput(message: string): string {
   return message.trim().replace(/\s+/g, " ");
+}
+
+function formatIdr(amount: number): string {
+  return `Rp${amount.toLocaleString("id-ID")}`;
 }
 
 function isCancelCommand(message: string): boolean {
@@ -102,6 +107,11 @@ function isUndoIntentCommand(message: string): boolean {
 function isNeracaIntentCommand(message: string): boolean {
   const normalized = normalizeInput(message).toLowerCase();
   return /\b(neraca|laporan\s+neraca|laporan\s+posisi)\b/.test(normalized) && /\b(buat|generate|tampilkan|lihat|cetak)\b/.test(normalized);
+}
+
+function isSalesCorrectionCommand(message: string): boolean {
+  const normalized = normalizeInput(message).toLowerCase();
+  return /\b(eh|bukan|jadinya|jadi|ganti|ubah|tambah|hapus|kurangin|kurangi|aja)\b/.test(normalized);
 }
 
 function isAutoWriteIntent(intent: ProposedAction["intent"]): boolean {
@@ -338,6 +348,152 @@ function neracaParsedCommandValues(input: ParseChatMessageInput, reportDate: str
   };
 }
 
+function salesCorrectionParsedCommandValues(input: ParseChatMessageInput, proposedAction: ProposedAction) {
+  const now = new Date();
+  return {
+    id: randomUUID(),
+    businessId: input.businessId,
+    userId: input.userId,
+    rawInputText: input.message,
+    normalizedInputText: normalizeInput(input.message),
+    source: "text" as const,
+    detectedIntent: "sales_order_update",
+    parserModel: "deterministic-system",
+    parserVersion: "pos-sales-correction-v1",
+    confidence: "1",
+    structuredPayload: JSON.stringify(proposedAction),
+    missingFields: JSON.stringify([]),
+    validationErrors: JSON.stringify([]),
+    status: "parsed" as const,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function findCorrectionQuantity(message: string): number | null {
+  const match = normalizeInput(message).match(/\b(\d+)\b/);
+  if (!match) return null;
+  const quantity = Number(match[1]);
+  return Number.isInteger(quantity) && quantity > 0 ? quantity : null;
+}
+
+function lineMatchesCorrection(message: string, line: NonNullable<ProposedAction["salesOrder"]>["lines"][number]): boolean {
+  const normalized = normalizeInput(message).toLowerCase();
+  const candidates = [line.productName, line.spokenLabel, ...line.productName.split(/\s+/)].map((value) => value.trim().toLowerCase()).filter(Boolean);
+  return candidates.some((candidate) => normalized.includes(candidate));
+}
+
+function describeSalesOrder(lines: NonNullable<ProposedAction["salesOrder"]>["lines"]): string {
+  return `Jual ${lines.map((line) => `${line.quantity} ${line.productName}`).join(", ")}`;
+}
+
+function rebuildSalesOrderAction(baseAction: ProposedAction, lines: NonNullable<ProposedAction["salesOrder"]>["lines"]): ProposedAction {
+  const amount = lines.reduce((sum, line) => sum + line.subtotal, 0);
+  const accountName = baseAction.paymentAccountName ?? "Kas";
+  return {
+    ...baseAction,
+    amount,
+    description: describeSalesOrder(lines),
+    affectedObject: lines.map((line) => line.productName).join(", "),
+    expectedEffects: [`${accountName} bertambah ${formatIdr(amount)}`, `Pendapatan bertambah ${formatIdr(amount)}`],
+    warning: "Perubahan dari input teks/suara. Periksa lagi sebelum disimpan.",
+    salesOrder: {
+      status: "draft",
+      totalAmount: amount,
+      lines,
+    },
+  };
+}
+
+async function getPendingSalesOrderAction(input: ParseChatMessageInput): Promise<ProposedAction | null> {
+  const pending = await listPendingIntentConfirmations({
+    businessId: input.businessId,
+    userId: input.userId,
+    limit: 5,
+  });
+
+  for (const confirmation of pending) {
+    if (confirmation.type !== "transaction") continue;
+    const action = parseProposedActionJson(confirmation.proposedActionJson);
+    if (action.intent === "sales_income" && action.salesOrder?.lines.length) {
+      return action;
+    }
+  }
+
+  return null;
+}
+
+async function tryHandleSalesCorrection(input: ParseChatMessageInput): Promise<ChatParseResponse | null> {
+  if (!isSalesCorrectionCommand(input.message)) return null;
+
+  const pendingAction = await getPendingSalesOrderAction(input);
+  if (!pendingAction?.salesOrder) return null;
+
+  const quantity = findCorrectionQuantity(input.message);
+  if (quantity === null) return null;
+
+  const matchedLine = pendingAction.salesOrder.lines.find((line) => lineMatchesCorrection(input.message, line));
+  if (!matchedLine) return null;
+
+  const updatedLines = pendingAction.salesOrder.lines.map((line) =>
+    line.productId === matchedLine.productId
+      ? {
+          ...line,
+          quantity,
+          subtotal: quantity * line.unitPrice,
+        }
+      : line,
+  );
+  const proposedAction = rebuildSalesOrderAction(pendingAction, updatedLines);
+
+  return runFinancialWrite(async (tx) => {
+    await appendChatMessage(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      role: "user",
+      kind: "text",
+      content: {
+        text: input.message,
+      },
+    });
+
+    const parsedCommand = await tx
+      .insertInto("parsed_commands")
+      .values(salesCorrectionParsedCommandValues(input, proposedAction))
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const confirmation = await createConfirmationRequest(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      parsedCommandId: parsedCommand.id,
+      proposedAction,
+    });
+
+    await appendChatMessage(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      role: "assistant",
+      kind: "confirmation_card",
+      parsedCommandId: parsedCommand.id,
+      confirmationRequestId: confirmation.id,
+      content: {
+        status: "requires_confirmation",
+        confirmationRequestId: confirmation.id,
+        proposedAction,
+        confirmation: toConfirmationResponse(confirmation),
+      },
+    });
+
+    return {
+      status: "requires_confirmation",
+      confirmationRequestId: confirmation.id,
+      proposedAction,
+      confirmation: toConfirmationResponse(confirmation),
+    };
+  });
+}
+
 async function handleNeracaIntent(input: ParseChatMessageInput): Promise<ChatParseResponse> {
   const reportDate = todayIso();
   const preview = await previewNeraca({
@@ -569,6 +725,9 @@ export async function parseChatMessage(input: ParseChatMessageInput): Promise<Ch
   if (isNeracaIntentCommand(input.message)) {
     return handleNeracaIntent(input);
   }
+
+  const salesCorrectionResult = await tryHandleSalesCorrection(input);
+  if (salesCorrectionResult) return salesCorrectionResult;
 
   const parserInput = await createParserInput(input);
   const parserResult = createInventoryOrExpenseClarification(parserInput) ?? (await parserEngine.parse(parserInput));

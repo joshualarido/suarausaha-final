@@ -148,18 +148,27 @@ function findMenuMatches(input: ParseIntentInput, draft: GeminiParserDraft) {
 function parseQuantityBeforeMenuItem(message: string, menuItem: ParseIntentInput["menuItems"][number]): number | null {
   const normalizedMessage = normalizeSearchText(message);
   const candidates = compactUnique([menuItem.name, ...menuItem.aliases]).map(normalizeSearchText).filter(Boolean);
+  const quantityUnitPattern = "(porsi|pcs|pc|buah|gelas|botol|bungkus|paket|cup)";
 
   for (const candidate of candidates) {
     const index = normalizedMessage.indexOf(candidate);
     if (index < 0) continue;
 
     const beforeCandidate = normalizedMessage.slice(0, index).trim();
-    const quantityMatch = beforeCandidate.match(/(\d+)\s*$/);
-    if (!quantityMatch) return null;
+    const beforeQuantityMatch = beforeCandidate.match(/(\d+)\s*$/);
+    if (beforeQuantityMatch) {
+      const quantity = Number(beforeQuantityMatch[1]);
+      if (Number.isInteger(quantity) && quantity > 0) return quantity;
+      return null;
+    }
 
-    const quantity = Number(quantityMatch[1]);
-    if (Number.isInteger(quantity) && quantity > 0) return quantity;
-    return null;
+    const afterCandidate = normalizedMessage.slice(index + candidate.length).split(",")[0].trim();
+    const afterQuantityMatch = afterCandidate.match(new RegExp(`^(?:[^\\d,]+\\s+){0,3}?(\\d+)\\s*${quantityUnitPattern}\\b`));
+    if (afterQuantityMatch) {
+      const quantity = Number(afterQuantityMatch[1]);
+      if (Number.isInteger(quantity) && quantity > 0) return quantity;
+      return null;
+    }
   }
 
   return null;
@@ -175,6 +184,37 @@ function findLiabilityMatches(input: ParseIntentInput, target: string) {
       normalize(item.lenderName).includes(normalizedTarget) ||
       normalize(item.description ?? "").includes(normalizedTarget),
   );
+}
+
+function findSpokenMenuLabel(message: string, menuItem: ParseIntentInput["menuItems"][number]): string {
+  const normalizedMessage = normalizeSearchText(message);
+  const candidates = compactUnique([menuItem.name, ...menuItem.aliases]).filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (normalizedMessage.includes(normalizeSearchText(candidate))) {
+      return candidate;
+    }
+  }
+
+  return menuItem.name;
+}
+
+function buildSalesOrderLines(input: ParseIntentInput, menuItems: ParseIntentInput["menuItems"]) {
+  return menuItems
+    .filter((item) => item.defaultPrice !== null)
+    .map((item) => {
+      const quantity = parseQuantityBeforeMenuItem(input.message, item) ?? 1;
+      const unitPrice = item.defaultPrice!;
+      return {
+        productId: item.id,
+        productName: item.name,
+        spokenLabel: findSpokenMenuLabel(input.message, item),
+        quantity,
+        unitPrice,
+        subtotal: quantity * unitPrice,
+        matchStatus: "matched" as const,
+      };
+    });
 }
 
 function findReceivableMatches(input: ParseIntentInput, target: string) {
@@ -252,7 +292,7 @@ export function validateParserDraft(
   const ambiguityResult = createInventoryOrExpenseClarification(input);
   if (ambiguityResult) return ambiguityResult;
 
-  if (draft.multipleEvents) {
+  if (draft.multipleEvents && !(draft.detectedIntent === "sales_income" && findMenuMatches(input, draft).length > 1)) {
     return clarificationResult({
       draft,
       parserModel,
@@ -276,6 +316,13 @@ export function validateParserDraft(
   let inferredAmount: number | null = null;
   let inferredSalesQuantity: number | null = null;
   let inferredSalesMenuName: string | null = null;
+  let inferredSalesOrder:
+    | {
+        status: "draft";
+        totalAmount: number;
+        lines: ReturnType<typeof buildSalesOrderLines>;
+      }
+    | null = null;
 
   if (!draft.detectedIntent || !supportedIntentSchema.safeParse(draft.detectedIntent).success) {
     missingFields.push("intent");
@@ -298,7 +345,11 @@ export function validateParserDraft(
   }
 
   const normalizedIntent = supportedIntentSchema.safeParse(draft.detectedIntent).success ? draft.detectedIntent : null;
-  const account = resolvePaymentAccount(input, draft);
+  let account = resolvePaymentAccount(input, draft);
+  if (!account && normalizedIntent === "sales_income" && input.defaultPaymentAccountId && input.defaultPaymentAccountName) {
+    const defaultAccount = input.paymentAccounts.find((candidate) => candidate.id === input.defaultPaymentAccountId);
+    if (defaultAccount) account = defaultAccount;
+  }
   const destinationAccount = normalizedIntent === "account_transfer" ? resolveDestinationPaymentAccount(input, draft) : null;
   if (account === "ambiguous") {
     missingFields.push("paymentAccountId");
@@ -369,6 +420,27 @@ export function validateParserDraft(
     }
 
     if (matchedMenus.length > 1) {
+      const missingPrice = matchedMenus.find((item) => item.defaultPrice === null);
+      if (missingPrice) {
+        return clarificationResult({
+          draft,
+          parserModel,
+          missingFields: compactUnique([...missingFields, "menu_item_price"]),
+          validationErrors,
+          question: `Menu ${missingPrice.name} belum punya harga. Isi harga menu dulu di Katalog, lalu catat penjualan lagi.`,
+        });
+      }
+
+      const lines = buildSalesOrderLines(input, matchedMenus);
+      const totalAmount = lines.reduce((sum, line) => sum + line.subtotal, 0);
+      inferredSalesOrder = {
+        status: "draft",
+        totalAmount,
+        lines,
+      };
+      inferredAmount = totalAmount;
+      normalizedAffectedObject = lines.map((line) => line.productName).join(", ");
+    } else if (matchedMenus.length > 1) {
       return clarificationResult({
         draft,
         parserModel,
@@ -382,13 +454,21 @@ export function validateParserDraft(
       });
     }
 
-    const [matchedMenu] = matchedMenus;
-    normalizedAffectedObject = matchedMenu.name;
-    inferredSalesMenuName = matchedMenu.name;
+    if (matchedMenus.length === 1) {
+      const [matchedMenu] = matchedMenus;
+      normalizedAffectedObject = matchedMenu.name;
+      inferredSalesMenuName = matchedMenu.name;
 
-    if ((draft.amount === null || draft.amount === undefined) && matchedMenu.defaultPrice !== null) {
-      inferredSalesQuantity = parseQuantityBeforeMenuItem(input.message, matchedMenu) ?? 1;
-      inferredAmount = inferredSalesQuantity * matchedMenu.defaultPrice;
+      if ((draft.amount === null || draft.amount === undefined) && matchedMenu.defaultPrice !== null) {
+        inferredSalesQuantity = parseQuantityBeforeMenuItem(input.message, matchedMenu) ?? 1;
+        inferredAmount = inferredSalesQuantity * matchedMenu.defaultPrice;
+        const lines = buildSalesOrderLines(input, [matchedMenu]);
+        inferredSalesOrder = {
+          status: "draft",
+          totalAmount: inferredAmount,
+          lines,
+        };
+      }
     }
   }
 
@@ -543,6 +623,9 @@ export function validateParserDraft(
       assumptionNotes.push(`Nominal dihitung dari ${inferredSalesQuantity} x harga menu ${inferredSalesMenuName}`);
     }
   }
+  if (normalizedIntent === "sales_income" && resolvedAccount && !draft.paymentAccountId && !draft.paymentAccountName) {
+    assumptionNotes.push(`Akun pembayaran memakai default ${resolvedAccount.name}`);
+  }
 
   const warning =
     actionBase.intent === "account_transfer"
@@ -557,6 +640,7 @@ export function validateParserDraft(
     ...actionBase,
     expectedEffects: effectsFor(actionBase),
     warning,
+    ...(inferredSalesOrder ? { salesOrder: inferredSalesOrder } : {}),
   });
 
   return {

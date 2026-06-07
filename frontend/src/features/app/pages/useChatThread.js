@@ -85,6 +85,8 @@ export function useChatThread() {
     try {
       if (activeClarification) {
         await clarifyChatMessage(activeClarification.data.clarificationId, submittedMessage);
+      } else if (pendingConfirmationRequestId) {
+        await parseChatMessage(submittedMessage);
       } else {
         const suraPayload = await querySura(submittedMessage);
         const suraType = suraPayload?.data?.type;

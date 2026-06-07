@@ -41,8 +41,13 @@ function parseMenuAliases(aliases: unknown): string[] {
 async function validateSalesCatalogItem(tx: FinancialWriteTx, input: CreateBaseTransactionInput): Promise<void> {
   if (input.type !== "sales_income") return;
 
-  const targetName = input.affectedObject?.trim();
-  if (!targetName) {
+  const targetNames = input.salesOrder?.lines.length
+    ? input.salesOrder.lines.map((line) => line.productName.trim()).filter(Boolean)
+    : input.affectedObject?.trim()
+      ? [input.affectedObject.trim()]
+      : [];
+
+  if (targetNames.length === 0) {
     throw new FinancialTargetNotFoundError("Menu yang dijual harus dipilih dari katalog.");
   }
 
@@ -53,14 +58,16 @@ async function validateSalesCatalogItem(tx: FinancialWriteTx, input: CreateBaseT
     .where("status", "=", "active")
     .execute();
 
-  const normalizedTarget = normalizeTargetName(targetName);
-  const matched = menuItems.some((item) => {
+  const matchedNames = targetNames.every((targetName) => {
+    const normalizedTarget = normalizeTargetName(targetName);
+    return menuItems.some((item) => {
     const aliases = parseMenuAliases(item.aliases);
     const candidates = [item.name, ...aliases].map(normalizeTargetName);
     return candidates.includes(normalizedTarget);
   });
+  });
 
-  if (!matched) {
+  if (!matchedNames) {
     throw new FinancialTargetNotFoundError("Menu yang dijual belum ada di katalog. Buat menu dulu di Katalog, lalu catat penjualan lagi.");
   }
 }

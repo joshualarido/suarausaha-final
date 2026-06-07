@@ -96,6 +96,7 @@ vi.mock("../src/features/confirmations/confirmation.service.js", () => {
   return {
     cancelPendingConfirmationsInTransaction: vi.fn(),
     createConfirmationRequest: vi.fn(),
+    listPendingIntentConfirmations: vi.fn(),
     toConfirmationResponse: vi.fn((value) => value),
   };
 });
@@ -125,7 +126,7 @@ vi.mock("../src/features/transactions/transaction.service.js", () => {
 });
 
 import { clarifyChatMessage, parseChatMessage } from "../src/features/chat/chat.service.js";
-import { createConfirmationRequest } from "../src/features/confirmations/confirmation.service.js";
+import { createConfirmationRequest, listPendingIntentConfirmations } from "../src/features/confirmations/confirmation.service.js";
 import { listActiveMenuItemsByBusinessId } from "../src/features/menu-items/menu-item.service.js";
 import { listPaymentAccountsByBusinessId } from "../src/features/payment-accounts/payment-account.service.js";
 import { parserEngine } from "../src/features/parser/parser-engine.service.js";
@@ -163,9 +164,10 @@ describe("chat auto-write mode", () => {
         updatedAt: new Date(),
       },
     ] as never);
+    vi.mocked(listPendingIntentConfirmations).mockResolvedValue([] as never);
   });
 
-  it("auto-saves approved intents immediately", async () => {
+  it("routes sales intents to confirmation instead of auto-saving", async () => {
     vi.mocked(parserEngine.parse).mockResolvedValue({
       status: "parsed",
       proposedAction: {
@@ -186,8 +188,9 @@ describe("chat auto-write mode", () => {
       parserVersion: "v1",
       structuredPayload: {},
     } as never);
-    vi.mocked(createBaseTransactionInTransaction).mockResolvedValue({
-      id: "txn_123",
+    vi.mocked(createConfirmationRequest).mockResolvedValue({
+      id: "confirm_123",
+      proposedActionJson: {},
     } as never);
 
     const result = await parseChatMessage({
@@ -197,19 +200,18 @@ describe("chat auto-write mode", () => {
     });
 
     expect(result).toMatchObject({
-      status: "saved_fast",
-      transactionId: "txn_123",
-      captureMode: "auto_fast",
+      status: "requires_confirmation",
+      confirmationRequestId: "confirm_123",
     });
-    expect(createBaseTransactionInTransaction).toHaveBeenCalledWith(
+    expect(createBaseTransactionInTransaction).not.toHaveBeenCalled();
+    expect(createConfirmationRequest).toHaveBeenCalledWith(
       fakeTx as never,
       expect.objectContaining({
-        type: "sales_income",
-        confirmationRequestId: null,
-        parsedCommandId: "parsed_123",
+        proposedAction: expect.objectContaining({
+          intent: "sales_income",
+        }),
       }),
     );
-    expect(createConfirmationRequest).not.toHaveBeenCalled();
   });
 
   it("keeps confirmation flow for non auto-write intents", async () => {
@@ -286,6 +288,82 @@ describe("chat auto-write mode", () => {
     });
     expect(createBaseTransactionInTransaction).not.toHaveBeenCalled();
     expect(createConfirmationRequest).not.toHaveBeenCalled();
+  });
+
+  it("updates an active POS sales confirmation from follow-up input", async () => {
+    vi.mocked(listPendingIntentConfirmations).mockResolvedValue([
+      {
+        id: "confirm_old",
+        businessId: "biz_123",
+        userId: "user_123",
+        parsedCommandId: "parsed_old",
+        type: "transaction",
+        status: "pending",
+        proposedActionJson: {
+          intent: "sales_income",
+          amount: 45_000,
+          date: "2026-05-25",
+          paymentAccountId: "acct_cash",
+          paymentAccountName: "Kas",
+          description: "Jual 3 Ayam Geprek",
+          affectedObject: "Ayam Geprek",
+          expectedEffects: ["Kas bertambah Rp45.000", "Pendapatan bertambah Rp45.000"],
+          warning: null,
+          salesOrder: {
+            status: "draft",
+            totalAmount: 45_000,
+            lines: [
+              {
+                productId: "menu_ayam_geprek",
+                productName: "Ayam Geprek",
+                spokenLabel: "ayam geprek",
+                quantity: 3,
+                unitPrice: 15_000,
+                subtotal: 45_000,
+                matchStatus: "matched",
+              },
+            ],
+          },
+        },
+      },
+    ] as never);
+    vi.mocked(createConfirmationRequest).mockResolvedValue({
+      id: "confirm_new",
+      proposedActionJson: {},
+    } as never);
+
+    const result = await parseChatMessage({
+      businessId: "biz_123",
+      userId: "user_123",
+      message: "eh ayamnya 2 aja",
+    });
+
+    expect(result).toMatchObject({
+      status: "requires_confirmation",
+      confirmationRequestId: "confirm_new",
+      proposedAction: {
+        intent: "sales_income",
+        amount: 30_000,
+        salesOrder: {
+          lines: [
+            expect.objectContaining({
+              productName: "Ayam Geprek",
+              quantity: 2,
+              subtotal: 30_000,
+            }),
+          ],
+        },
+      },
+    });
+    expect(parserEngine.parse).not.toHaveBeenCalled();
+    expect(createConfirmationRequest).toHaveBeenCalledWith(
+      fakeTx as never,
+      expect.objectContaining({
+        proposedAction: expect.objectContaining({
+          amount: 30_000,
+        }),
+      }),
+    );
   });
 
   it("clarifies ambiguous bahan purchases before parser output can auto-save", async () => {

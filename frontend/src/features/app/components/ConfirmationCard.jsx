@@ -20,6 +20,7 @@ export function ConfirmationCard({
   const proposedAction = item.data.proposedAction;
   const proposedNeracaReport = item.data.proposedNeracaReport;
   const isNeracaReport = item.data.type === "neraca_report" || Boolean(proposedNeracaReport);
+  const isPosSales = proposedAction?.intent === "sales_income" && proposedAction.salesOrder?.lines?.length;
   const editingThisCard = isEditing && activeConfirmation?.id === item.data.id;
   const isCardActive = item.data.id === pendingConfirmationRequestId;
   const targetLabels = {
@@ -99,6 +100,90 @@ export function ConfirmationCard({
               className="px-4 py-2.5"
             >
               <X className="h-4 w-4" />
+              Batalkan
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPosSales) {
+    return (
+      <div className="flex justify-start">
+        <div className="w-full max-w-[96%] rounded-2xl border border-[#D4E1F0] bg-card px-4 py-4 sm:max-w-[92%]">
+          <p className="text-xs font-medium text-primary">Butuh konfirmasi</p>
+          {!isCardActive ? (
+            <p className="mt-1 text-xs text-muted-foreground">Konfirmasi ini sudah tidak aktif.</p>
+          ) : null}
+          <div className="mt-2 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-base font-semibold text-foreground">Konfirmasi penjualan</p>
+              <p className="text-xs text-muted-foreground">Ubah lewat input teks atau suara sebelum disimpan.</p>
+            </div>
+            <p className="text-right text-lg font-semibold text-foreground">{formatIdr(proposedAction.amount)}</p>
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-lg border border-border">
+            {proposedAction.salesOrder.lines.map((line) => (
+              <div key={`${line.productId}-${line.productName}`} className="grid grid-cols-[1fr_auto] gap-3 border-b border-border px-3 py-2.5 last:border-b-0">
+                <div>
+                  <p className="text-sm font-medium text-foreground">{line.productName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {line.quantity} x {formatIdr(line.unitPrice)}
+                  </p>
+                </div>
+                <p className="text-sm font-semibold text-foreground">{formatIdr(line.subtotal)}</p>
+              </div>
+            ))}
+          </div>
+
+          <dl className="mt-3 space-y-1 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Tanggal</dt>
+              <dd>{formatDateId(proposedAction.date)}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Masuk ke akun</dt>
+              <dd>{proposedAction.paymentAccountName ?? "Kas"}</dd>
+            </div>
+          </dl>
+
+          <ul className="mt-3 space-y-1 text-sm">
+            {proposedAction.expectedEffects.map((effect) => (
+              <li key={effect} className="flex gap-2 text-muted-foreground">
+                <Check className="mt-0.5 h-4 w-4 text-primary" />
+                <span>{effect}</span>
+              </li>
+            ))}
+          </ul>
+
+          {proposedAction.warning ? (
+            <p className="mt-3 rounded-lg border border-[#D4E1F0] bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+              {proposedAction.warning}
+            </p>
+          ) : null}
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              size="lg"
+              disabled={isBusy || !isCardActive}
+              onClick={() => onConfirm(item)}
+              className="h-14 text-base"
+            >
+              <Check className="h-5 w-5" />
+              Simpan
+            </Button>
+            <Button
+              type="button"
+              size="lg"
+              variant="destructive"
+              disabled={isBusy || !isCardActive}
+              onClick={() => onCancel(item)}
+              className="h-14 text-base"
+            >
+              <X className="h-5 w-5" />
               Batalkan
             </Button>
           </div>
