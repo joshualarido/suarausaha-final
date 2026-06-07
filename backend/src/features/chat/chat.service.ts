@@ -114,6 +114,10 @@ function isSalesCorrectionCommand(message: string): boolean {
   return /\b(eh|bukan|jadinya|jadi|ganti|ubah|tambah|hapus|kurangin|kurangi|aja)\b/.test(normalized);
 }
 
+function isAdditiveSalesCorrectionCommand(message: string): boolean {
+  return /\btambah\b/.test(normalizeInput(message).toLowerCase());
+}
+
 function isAutoWriteIntent(intent: ProposedAction["intent"]): boolean {
   return AUTO_WRITE_INTENTS.has(intent);
 }
@@ -383,6 +387,12 @@ function lineMatchesCorrection(message: string, line: NonNullable<ProposedAction
   return candidates.some((candidate) => normalized.includes(candidate));
 }
 
+function menuItemMatchesCorrection(message: string, menuItem: Awaited<ReturnType<typeof getParserMenuContext>>[number]): boolean {
+  const normalized = normalizeInput(message).toLowerCase();
+  const candidates = [menuItem.name, ...menuItem.aliases].map((value) => value.trim().toLowerCase()).filter(Boolean);
+  return candidates.some((candidate) => normalized.includes(candidate));
+}
+
 function describeSalesOrder(lines: NonNullable<ProposedAction["salesOrder"]>["lines"]): string {
   return `Jual ${lines.map((line) => `${line.quantity} ${line.productName}`).join(", ")}`;
 }
@@ -433,17 +443,44 @@ async function tryHandleSalesCorrection(input: ParseChatMessageInput): Promise<C
   if (quantity === null) return null;
 
   const matchedLine = pendingAction.salesOrder.lines.find((line) => lineMatchesCorrection(input.message, line));
-  if (!matchedLine) return null;
+  const isAdditive = isAdditiveSalesCorrectionCommand(input.message);
+  let updatedLines: NonNullable<ProposedAction["salesOrder"]>["lines"] | null = null;
 
-  const updatedLines = pendingAction.salesOrder.lines.map((line) =>
-    line.productId === matchedLine.productId
-      ? {
-          ...line,
-          quantity,
-          subtotal: quantity * line.unitPrice,
-        }
-      : line,
-  );
+  if (matchedLine) {
+    updatedLines = pendingAction.salesOrder.lines.map((line) => {
+      if (line.productId !== matchedLine.productId) return line;
+
+      const nextQuantity = isAdditive ? line.quantity + quantity : quantity;
+      return {
+        ...line,
+        quantity: nextQuantity,
+        subtotal: nextQuantity * line.unitPrice,
+      };
+    });
+  } else if (isAdditive) {
+    const menuItems = await getParserMenuContext(input.businessId);
+    const matches = menuItems.filter((menuItem) => menuItemMatchesCorrection(input.message, menuItem));
+    if (matches.length !== 1) return null;
+
+    const [menuItem] = matches;
+    if (menuItem.defaultPrice === null) return null;
+
+    updatedLines = [
+      ...pendingAction.salesOrder.lines,
+      {
+        productId: menuItem.id,
+        productName: menuItem.name,
+        spokenLabel: menuItem.name.toLowerCase(),
+        quantity,
+        unitPrice: menuItem.defaultPrice,
+        subtotal: quantity * menuItem.defaultPrice,
+        matchStatus: "matched",
+      },
+    ];
+  }
+
+  if (!updatedLines) return null;
+
   const proposedAction = rebuildSalesOrderAction(pendingAction, updatedLines);
 
   return runFinancialWrite(async (tx) => {

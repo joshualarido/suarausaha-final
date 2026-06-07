@@ -53,7 +53,7 @@ export function AppLiabilitiesPage() {
         setSummary(payload?.data ?? null);
       } catch (error) {
         if (!mounted) return;
-        const fallback = "Gagal memuat data liabilitas.";
+        const fallback = "Gagal memuat data utang.";
         const message = error instanceof ApiClientError || error instanceof Error ? error.message || fallback : fallback;
         setErrorMessage(message);
       } finally {
@@ -71,7 +71,7 @@ export function AppLiabilitiesPage() {
   }, []);
 
   if (isLoading) {
-    return <LoadingState title="Memuat data liabilitas..." description="Mohon tunggu sebentar." />;
+    return <LoadingState title="Memuat data utang..." description="Mohon tunggu sebentar." />;
   }
 
   const liabilityItems = sortRows(Array.isArray(summary?.items) ? summary.items : [], sort.sortBy, sort.sortDirection, sortGetters);
@@ -82,7 +82,7 @@ export function AppLiabilitiesPage() {
 
   return (
     <section className="motion-enter-up rounded-lg border border-border bg-card p-6 shadow-sm">
-      <h2 className="su-type-section-title text-foreground">Liabilitas usaha</h2>
+      <h2 className="su-type-section-title text-foreground">Utang usaha</h2>
       <p className="su-type-helper mt-1 text-muted-foreground">
         Halaman ini menampilkan utang dari saldo awal dan transaksi utang yang terkonfirmasi.
       </p>
@@ -155,7 +155,7 @@ export function AppLiabilitiesPage() {
                 {liabilityItems.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-6 text-muted-foreground">
-                      Belum ada data liabilitas.
+                      Belum ada data utang.
                     </td>
                   </tr>
                 ) : (
@@ -201,7 +201,7 @@ export function AppLiabilitiesPage() {
         </>
       ) : (
         <div className="mt-5 rounded-md border border-dashed border-border bg-background p-5">
-          <p className="su-type-helper text-muted-foreground">Belum ada data liabilitas untuk ditampilkan.</p>
+          <p className="su-type-helper text-muted-foreground">Belum ada data utang untuk ditampilkan.</p>
         </div>
       )}
     </section>

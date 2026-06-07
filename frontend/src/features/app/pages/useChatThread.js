@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { hydrateChatItemsFromThread } from "@/features/app/chat-normalizers";
 import { clearChatThread, clarifyChatMessage, getChatThread, parseChatMessage, querySura, undoLatestTransactionViaChat } from "@/features/chat/chat.api";
-import { cancelConfirmation, confirmConfirmation, editConfirmation } from "@/features/confirmations/confirmations.api";
+import { cancelConfirmation, confirmConfirmation } from "@/features/confirmations/confirmations.api";
+
+function isTutorialVideoRequest(message) {
+  const normalized = message.trim().toLowerCase();
+  return (
+    /\b(video tutorial|tutorial video|panduan video)\b/.test(normalized) ||
+    (/\b(tutorial|cara pakai|panduan)\b/.test(normalized) && /\b(video|sura|aplikasi)\b/.test(normalized))
+  );
+}
 
 export function useChatThread() {
   const [status, setStatus] = useState("idle");
   const [chatItems, setChatItems] = useState([]);
   const [threadLoading, setThreadLoading] = useState(true);
-  const [activeConfirmation, setActiveConfirmation] = useState(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editFields, setEditFields] = useState({
-    amount: "",
-    date: "",
-    description: "",
-  });
   const [pendingConfirmationRequestId, setPendingConfirmationRequestId] = useState(null);
   const [isClearingChat, setIsClearingChat] = useState(false);
   const [isUndoingLatest, setIsUndoingLatest] = useState(false);
@@ -79,12 +80,23 @@ export function useChatThread() {
     });
 
     setStatus("loading");
-    setIsEditing(false);
-    setActiveConfirmation(null);
 
     try {
+      let handledLocally = false;
+
       if (activeClarification) {
         await clarifyChatMessage(activeClarification.data.clarificationId, submittedMessage);
+      } else if (isTutorialVideoRequest(submittedMessage)) {
+        appendChatItem({
+          role: "assistant",
+          type: "tutorial_video_artifact",
+          data: {
+            title: "Video tutorial Sura",
+            description: "Ini placeholder untuk artifact video tutorial. Nanti area ini bisa memuat video panduan asli.",
+            aspectRatio: "16:9",
+          },
+        });
+        handledLocally = true;
       } else if (pendingConfirmationRequestId) {
         await parseChatMessage(submittedMessage);
       } else {
@@ -95,7 +107,9 @@ export function useChatThread() {
           await parseChatMessage(submittedMessage);
         }
       }
-      await refreshChatThread();
+      if (!handledLocally) {
+        await refreshChatThread();
+      }
       setStatus("idle");
       return true;
     } catch (error) {
@@ -150,45 +164,11 @@ export function useChatThread() {
     }
   }
 
-  function startEditConfirmation(item) {
-    setActiveConfirmation(item.data);
-    setEditFields({
-      amount: String(item.data.proposedAction.amount),
-      date: item.data.proposedAction.date,
-      description: item.data.proposedAction.description,
-    });
-    setIsEditing(true);
-  }
-
-  async function submitConfirmationEdit(event, item) {
-    event.preventDefault();
-
-    if (!item?.data || isBusy) return;
-
-    setStatus("loading");
-
-    try {
-      await editConfirmation(item.data.id, {
-        amount: Number(editFields.amount),
-        date: editFields.date,
-        description: editFields.description,
-      });
-      await refreshChatThread();
-      setIsEditing(false);
-      setStatus("idle");
-    } catch (error) {
-      appendSystemMessage(error.message || "Edit konfirmasi gagal disimpan.");
-      setStatus("idle");
-    }
-  }
-
   async function clearThread() {
     if (isBusy || isClearingChat) return;
 
     setIsClearingChat(true);
     setStatus("loading");
-    setIsEditing(false);
-    setActiveConfirmation(null);
 
     try {
       await clearChatThread();
@@ -208,8 +188,6 @@ export function useChatThread() {
 
     setIsUndoingLatest(true);
     setStatus("loading");
-    setIsEditing(false);
-    setActiveConfirmation(null);
 
     try {
       await undoLatestTransactionViaChat();
@@ -224,23 +202,16 @@ export function useChatThread() {
   }
 
   return {
-    activeConfirmation,
     answerClarification,
-    cancelEditConfirmation: () => setIsEditing(false),
     cancelItem,
     chatItems,
     clearThread,
     confirmItem,
-    editFields,
     isBusy,
     isClearingChat,
-    isEditing,
     isUndoingLatest,
     pendingConfirmationRequestId,
-    setEditFields,
-    startEditConfirmation,
     status,
-    submitConfirmationEdit,
     submitMessage,
     threadLoading,
     undoLatestTransaction,

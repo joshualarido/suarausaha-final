@@ -4,6 +4,7 @@ import { resolveSuraDateRange } from "./date-range.js";
 import { runSuraAnalytics } from "./analytics.service.js";
 import { formatSuraAnswer } from "./sura-answer-formatter.js";
 import { classifySuraIntent, type SuraAnalyticsIntent } from "./sura-intent-classifier.js";
+import { SURA_INPUT_GUIDE } from "./sura-input-guide.js";
 
 export type SuraQueryResponseType =
   | "analytics_answer"
@@ -83,8 +84,10 @@ function helpResponse(): SuraQueryResponse {
     type: "help",
     intent: "help",
     answer:
-      "Sura bisa bantu catat transaksi, menjawab ringkasan sederhana seperti kas, pemasukan, pengeluaran, laba sederhana, utang, piutang, stok, aset, dan membantu membuat neraca.",
-    data: {},
+      "Sura bisa bantu catat transaksi, tanya ringkasan usaha, dan buat neraca. Pakai kata kunci di bawah ini; data baru tetap hanya disimpan setelah kamu cek kartu konfirmasi.",
+    data: {
+      inputGuide: SURA_INPUT_GUIDE,
+    },
     warnings: [],
   };
 }

@@ -130,20 +130,60 @@ function renderRecentTransactions(intent, data) {
   );
 }
 
+function renderInputGuide(data) {
+  const sections = Array.isArray(data.inputGuide) ? data.inputGuide : [];
+  if (!sections.length) return null;
+
+  return (
+    <div className="mt-4 space-y-3">
+      {sections.map((section) => {
+        const items = Array.isArray(section.items) ? section.items : [];
+        if (!items.length) return null;
+
+        return (
+          <section key={section.title} className="rounded-lg border border-border bg-secondary/15 p-3">
+            <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{section.title}</h3>
+            <div className="mt-2 space-y-2">
+              {items.map((guideItem) => (
+                <div key={`${section.title}-${guideItem.label}`} className="rounded-md bg-card px-3 py-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">{guideItem.label}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Contoh: {guideItem.example}</p>
+                      {guideItem.note ? <p className="mt-1 text-xs text-muted-foreground">{guideItem.note}</p> : null}
+                    </div>
+                    <div className="flex max-w-full flex-wrap gap-1 sm:justify-end">
+                      {(Array.isArray(guideItem.keywords) ? guideItem.keywords : []).map((keyword) => (
+                        <span key={`${guideItem.label}-${keyword}`} className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          {keyword}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SuraAnswerCard({ item }) {
   const { intent, message, data = {}, warnings = [] } = item.data;
   const isUnsupported = intent === "unsupported";
   const Icon = intent === "help" || isUnsupported ? HelpCircle : BarChart3;
 
   return (
-    <div className="flex justify-start">
+    <div className="motion-chat-card flex justify-start">
       <div className="max-w-[94%] rounded-xl border border-border bg-card px-4 py-4 shadow-sm sm:max-w-[92%]">
         <div className="flex items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Icon className="h-4 w-4" aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               {intentTitles[intent] ?? "Jawaban Sura"}
             </p>
             <p className="mt-1 text-sm leading-6 text-foreground">{message}</p>
@@ -152,6 +192,7 @@ export function SuraAnswerCard({ item }) {
 
         {renderRecentTransactions(intent, data)}
         {renderNamedList(intent, data)}
+        {renderInputGuide(data)}
         <div className="mt-3">{renderMetrics(intent, data)}</div>
 
         {warnings.length ? (

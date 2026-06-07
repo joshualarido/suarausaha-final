@@ -366,6 +366,251 @@ describe("chat auto-write mode", () => {
     );
   });
 
+  it("adds a catalog item to an active POS sales confirmation from tambah input", async () => {
+    vi.mocked(listActiveMenuItemsByBusinessId).mockResolvedValue([
+      {
+        id: "menu_ayam_geprek",
+        businessId: "biz_123",
+        name: "Ayam Geprek",
+        aliases: ["geprek"],
+        defaultPrice: "15000",
+        category: "Makanan",
+        status: "active",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: "menu_es_teh",
+        businessId: "biz_123",
+        name: "Es Teh",
+        aliases: ["esteh"],
+        defaultPrice: "5000",
+        category: "Minuman",
+        status: "active",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as never);
+    vi.mocked(listPendingIntentConfirmations).mockResolvedValue([
+      {
+        id: "confirm_old",
+        businessId: "biz_123",
+        userId: "user_123",
+        parsedCommandId: "parsed_old",
+        type: "transaction",
+        status: "pending",
+        proposedActionJson: {
+          intent: "sales_income",
+          amount: 30_000,
+          date: "2026-05-25",
+          paymentAccountId: "acct_cash",
+          paymentAccountName: "Kas",
+          description: "Jual 2 Ayam Geprek",
+          affectedObject: "Ayam Geprek",
+          expectedEffects: ["Kas bertambah Rp30.000", "Pendapatan bertambah Rp30.000"],
+          warning: null,
+          salesOrder: {
+            status: "draft",
+            totalAmount: 30_000,
+            lines: [
+              {
+                productId: "menu_ayam_geprek",
+                productName: "Ayam Geprek",
+                spokenLabel: "ayam geprek",
+                quantity: 2,
+                unitPrice: 15_000,
+                subtotal: 30_000,
+                matchStatus: "matched",
+              },
+            ],
+          },
+        },
+      },
+    ] as never);
+    vi.mocked(createConfirmationRequest).mockResolvedValue({
+      id: "confirm_new",
+      proposedActionJson: {},
+    } as never);
+
+    const result = await parseChatMessage({
+      businessId: "biz_123",
+      userId: "user_123",
+      message: "tambah 2 es teh",
+    });
+
+    expect(result).toMatchObject({
+      status: "requires_confirmation",
+      confirmationRequestId: "confirm_new",
+      proposedAction: {
+        intent: "sales_income",
+        amount: 40_000,
+        affectedObject: "Ayam Geprek, Es Teh",
+        salesOrder: {
+          totalAmount: 40_000,
+          lines: [
+            expect.objectContaining({
+              productName: "Ayam Geprek",
+              quantity: 2,
+              subtotal: 30_000,
+            }),
+            expect.objectContaining({
+              productId: "menu_es_teh",
+              productName: "Es Teh",
+              quantity: 2,
+              unitPrice: 5_000,
+              subtotal: 10_000,
+            }),
+          ],
+        },
+      },
+    });
+    expect(parserEngine.parse).not.toHaveBeenCalled();
+  });
+
+  it("increments an existing POS sales line from tambah input", async () => {
+    vi.mocked(listActiveMenuItemsByBusinessId).mockResolvedValue([
+      {
+        id: "menu_es_teh",
+        businessId: "biz_123",
+        name: "Es Teh",
+        aliases: ["esteh"],
+        defaultPrice: "5000",
+        category: "Minuman",
+        status: "active",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as never);
+    vi.mocked(listPendingIntentConfirmations).mockResolvedValue([
+      {
+        id: "confirm_old",
+        businessId: "biz_123",
+        userId: "user_123",
+        parsedCommandId: "parsed_old",
+        type: "transaction",
+        status: "pending",
+        proposedActionJson: {
+          intent: "sales_income",
+          amount: 5_000,
+          date: "2026-05-25",
+          paymentAccountId: "acct_cash",
+          paymentAccountName: "Kas",
+          description: "Jual 1 Es Teh",
+          affectedObject: "Es Teh",
+          expectedEffects: ["Kas bertambah Rp5.000", "Pendapatan bertambah Rp5.000"],
+          warning: null,
+          salesOrder: {
+            status: "draft",
+            totalAmount: 5_000,
+            lines: [
+              {
+                productId: "menu_es_teh",
+                productName: "Es Teh",
+                spokenLabel: "es teh",
+                quantity: 1,
+                unitPrice: 5_000,
+                subtotal: 5_000,
+                matchStatus: "matched",
+              },
+            ],
+          },
+        },
+      },
+    ] as never);
+    vi.mocked(createConfirmationRequest).mockResolvedValue({
+      id: "confirm_new",
+      proposedActionJson: {},
+    } as never);
+
+    const result = await parseChatMessage({
+      businessId: "biz_123",
+      userId: "user_123",
+      message: "tambah 2 es teh",
+    });
+
+    expect(result).toMatchObject({
+      status: "requires_confirmation",
+      proposedAction: {
+        amount: 15_000,
+        salesOrder: {
+          lines: [
+            expect.objectContaining({
+              productName: "Es Teh",
+              quantity: 3,
+              subtotal: 15_000,
+            }),
+          ],
+        },
+      },
+    });
+    expect(parserEngine.parse).not.toHaveBeenCalled();
+  });
+
+  it("sets an existing POS sales line quantity from non-additive correction input", async () => {
+    vi.mocked(listPendingIntentConfirmations).mockResolvedValue([
+      {
+        id: "confirm_old",
+        businessId: "biz_123",
+        userId: "user_123",
+        parsedCommandId: "parsed_old",
+        type: "transaction",
+        status: "pending",
+        proposedActionJson: {
+          intent: "sales_income",
+          amount: 45_000,
+          date: "2026-05-25",
+          paymentAccountId: "acct_cash",
+          paymentAccountName: "Kas",
+          description: "Jual 3 Ayam Geprek",
+          affectedObject: "Ayam Geprek",
+          expectedEffects: ["Kas bertambah Rp45.000", "Pendapatan bertambah Rp45.000"],
+          warning: null,
+          salesOrder: {
+            status: "draft",
+            totalAmount: 45_000,
+            lines: [
+              {
+                productId: "menu_ayam_geprek",
+                productName: "Ayam Geprek",
+                spokenLabel: "ayam geprek",
+                quantity: 3,
+                unitPrice: 15_000,
+                subtotal: 45_000,
+                matchStatus: "matched",
+              },
+            ],
+          },
+        },
+      },
+    ] as never);
+    vi.mocked(createConfirmationRequest).mockResolvedValue({
+      id: "confirm_new",
+      proposedActionJson: {},
+    } as never);
+
+    const result = await parseChatMessage({
+      businessId: "biz_123",
+      userId: "user_123",
+      message: "ubah jadi 2 ayam geprek",
+    });
+
+    expect(result).toMatchObject({
+      status: "requires_confirmation",
+      proposedAction: {
+        amount: 30_000,
+        salesOrder: {
+          lines: [
+            expect.objectContaining({
+              productName: "Ayam Geprek",
+              quantity: 2,
+              subtotal: 30_000,
+            }),
+          ],
+        },
+      },
+    });
+  });
+
   it("clarifies ambiguous bahan purchases before parser output can auto-save", async () => {
     const result = await parseChatMessage({
       businessId: "biz_123",

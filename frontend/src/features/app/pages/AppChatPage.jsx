@@ -7,6 +7,7 @@ import { useChatThread } from "./useChatThread";
 
 const SPEECH_RECOGNITION_UNSUPPORTED =
   "Input suara gratis hanya didukung di browser tertentu seperti Chrome atau Edge. Kamu masih bisa mengetik transaksi.";
+const HELP_PROMPT = "Sura bisa apa?";
 
 export function AppChatPage() {
   const [message, setMessage] = useState("");
@@ -23,23 +24,16 @@ export function AppChatPage() {
   const isSpeechSupported = Boolean(SpeechRecognition);
   const hasDraftMessage = Boolean(message.trim());
   const {
-    activeConfirmation,
     answerClarification,
-    cancelEditConfirmation,
     cancelItem,
     chatItems,
     clearThread,
     confirmItem,
-    editFields,
     isBusy,
     isClearingChat,
-    isEditing,
     isUndoingLatest,
     pendingConfirmationRequestId,
-    setEditFields,
-    startEditConfirmation,
     status,
-    submitConfirmationEdit,
     submitMessage,
     threadLoading,
     undoLatestTransaction,
@@ -196,13 +190,6 @@ export function AppChatPage() {
     }
   }
 
-  function handleEditFieldChange(field, value) {
-    setEditFields((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
-
   if (threadLoading) {
     return (
       <section className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-card shadow-sm sm:rounded-xl sm:border sm:border-border">
@@ -224,12 +211,10 @@ export function AppChatPage() {
           <div className="flex min-w-0 items-center gap-3">
             <div className="h-10 w-10 shrink-0 rounded-full border border-border bg-secondary/50 sm:h-11 sm:w-11" aria-hidden />
             <div className="min-w-0">
-              <p className="su-type-ui truncate text-foreground">Sura Assistant</p>
+              <p className="su-type-ui truncate text-foreground">Sura</p>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
                 <span className="text-xs text-muted-foreground">Online</span>
-                <span className="text-xs text-muted-foreground/80">|</span>
-                <span className="text-xs text-muted-foreground">Siap bantu catat transaksi</span>
               </div>
             </div>
           </div>
@@ -262,19 +247,12 @@ export function AppChatPage() {
 
       <div ref={chatScrollRef} className="su-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
         <ChatMessageList
-          activeConfirmation={activeConfirmation}
           chatItems={chatItems}
-          editFields={editFields}
           isBusy={isBusy}
-          isEditing={isEditing}
           onCancel={cancelItem}
-          onCancelEdit={cancelEditConfirmation}
           onClarificationAnswer={answerClarification}
           onConfirm={confirmItem}
-          onEditFieldChange={handleEditFieldChange}
-          onEditSubmit={submitConfirmationEdit}
-          onPromptSelect={setMessage}
-          onStartEdit={startEditConfirmation}
+          onHelpRequest={() => sendMessageText(HELP_PROMPT)}
           pendingConfirmationRequestId={pendingConfirmationRequestId}
         />
       </div>

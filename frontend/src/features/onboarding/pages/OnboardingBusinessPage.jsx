@@ -8,6 +8,7 @@ import { signOutUser } from "@/features/auth/auth.api";
 import { createBusinessProfile, getBusinessProfile, updateBusinessProfile } from "@/features/business/business.api";
 import { confirmOpeningBalance, previewOpeningBalance } from "@/features/onboarding/opening-balance.api";
 import { createMenuItem, updateMenuItem } from "@/features/catalog/menu-items.api";
+import { TutorialVideoArtifact } from "@/features/app/components/TutorialVideoArtifact";
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -590,6 +591,13 @@ export function OnboardingBusinessPage() {
             {step === "profile" ? (
               <section>
                 <h2 className="text-2xl font-bold text-foreground">Profil Bisnis</h2>
+                <div className="mt-6">
+                  <TutorialVideoArtifact
+                    compact
+                    title="Tutorial setup Sura"
+                    description="Placeholder video end-to-end untuk membantu pengguna memahami setup awal."
+                  />
+                </div>
                 <div className="mt-7">
                   <TextField
                     id="business-name"

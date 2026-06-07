@@ -15,12 +15,15 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  Moon,
   PanelLeftClose,
+  Sun,
   Wallet,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session-context";
+import { useTheme } from "@/features/app/theme-context";
 import { ApiClientError, APP_NOTIFICATION_EVENT } from "@/lib/api-client";
 import { signOutUser } from "@/features/auth/auth.api";
 import { BrandLogo } from "./BrandLogo";
@@ -29,17 +32,17 @@ const navigationGroups = [
   {
     label: null,
     items: [
-      { label: "Obrolan", href: "/app", icon: MessageSquare, end: true },
+      { label: "Sura", href: "/app", icon: MessageSquare, end: true },
     ],
   },
   {
     label: "Bisnis",
     items: [
-      { label: "Laporan", href: "/app/reports", icon: FileText },
+      { label: "Neraca", href: "/app/reports", icon: FileText },
       { label: "Transaksi", href: "/app/transactions", icon: Banknote },
       { label: "Stok", href: "/app/stock", icon: Boxes },
       { label: "Aset", href: "/app/assets", icon: Landmark },
-      { label: "Liabilitas", href: "/app/liabilities", icon: HandCoins },
+      { label: "Utang", href: "/app/liabilities", icon: HandCoins },
       { label: "Piutang", href: "/app/receivables", icon: BookOpenText },
     ],
   },
@@ -71,6 +74,7 @@ function getInitial(name) {
 
 export function DashboardLayout() {
   const session = useSession();
+  const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -91,15 +95,15 @@ export function DashboardLayout() {
   const isChatRoute = location.pathname === "/app";
   const breadcrumbs = useMemo(() => {
     const pathToLabel = {
-      app: "Obrolan",
-      reports: "Laporan",
+      app: "Sura",
+      reports: "Neraca",
       menu: "Katalog",
       katalog: "Katalog",
       catalog: "Katalog",
       "payment-accounts": "Akun pembayaran",
       stock: "Stok",
       assets: "Aset",
-      liabilities: "Liabilitas",
+      liabilities: "Utang",
       receivables: "Piutang",
       transactions: "Transaksi",
       settings: "Pengaturan",
@@ -110,7 +114,7 @@ export function DashboardLayout() {
     const bisnisSections = new Set(["reports", "transactions", "stock", "assets", "liabilities", "receivables"]);
     const segments = location.pathname.split("/").filter(Boolean).slice(1);
     if (segments.length === 0) {
-      return ["Obrolan"];
+      return ["Sura"];
     }
     if (bisnisSections.has(segments[0])) {
       return ["Bisnis", pathToLabel[segments[0]] ?? segments[0]];
@@ -444,6 +448,15 @@ export function DashboardLayout() {
               </div>
 
               <div className="relative flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label={isDark ? "Aktifkan mode terang" : "Aktifkan mode gelap"}
+                  onClick={toggleTheme}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-card hover:text-foreground"
+                >
+                  {isDark ? <Sun aria-hidden className="h-5 w-5" /> : <Moon aria-hidden className="h-5 w-5" />}
+                </button>
+
                 <button
                   type="button"
                   aria-label="Notifikasi"
