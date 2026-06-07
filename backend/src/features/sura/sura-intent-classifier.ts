@@ -116,7 +116,7 @@ function isHelp(message: string): boolean {
 
 function isWriteAction(message: string): boolean {
   return (
-    /\b(jual|terjual|beli|bayar|pinjam|utang\s+baru|hutang\s+baru|modal|ambil\s+uang|prive|piutang\s+baru)\b/.test(message) ||
+    /\b(jual|terjual|beli|bayar|pinjam|utang\s+baru|hutang\s+baru|modal|ambil\s+uang|prive|piutang\s+baru|transfer|pindah|mutasi|geser)\b/.test(message) ||
     /\b(undo|batalkan|batalin|reverse|salah\s+catat)\b/.test(message)
   );
 }

@@ -30,6 +30,14 @@ describe("sura intent classifier", () => {
       type: "write_action",
       analyticsIntent: null,
     });
+    expect(classifySuraIntent("transfer 500rb dari bca ke kas")).toMatchObject({
+      type: "write_action",
+      analyticsIntent: null,
+    });
+    expect(classifySuraIntent("pindah 200 ribu dari Kas ke BCA")).toMatchObject({
+      type: "write_action",
+      analyticsIntent: null,
+    });
     expect(classifySuraIntent("buat neraca bulan ini")).toMatchObject({
       type: "report_request",
       analyticsIntent: null,

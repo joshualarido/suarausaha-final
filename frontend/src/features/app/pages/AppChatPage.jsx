@@ -1,12 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import { Hourglass, LockKeyhole, RotateCcw, Send, Trash2 } from "lucide-react";
+import { Hourglass, LockKeyhole, Mic, MicOff, RotateCcw, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { ChatMessageList } from "@/features/app/components/ChatMessageList";
 import { useChatThread } from "./useChatThread";
 
+const SPEECH_RECOGNITION_UNSUPPORTED =
+  "Input suara gratis hanya didukung di browser tertentu seperti Chrome atau Edge. Kamu masih bisa mengetik transaksi.";
+
 export function AppChatPage() {
   const [message, setMessage] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const [voiceStatus, setVoiceStatus] = useState("");
   const chatScrollRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const finalTranscriptRef = useRef("");
+  const voiceHadErrorRef = useRef(false);
+  const voiceSubmitStartedRef = useRef(false);
+  const SpeechRecognition =
+    typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
+  const isSpeechSupported = Boolean(SpeechRecognition);
+  const hasDraftMessage = Boolean(message.trim());
   const {
     activeConfirmation,
     answerClarification,
@@ -43,17 +58,141 @@ export function AppChatPage() {
     scrollChatToBottom(chatItems.length <= 1 ? "auto" : "smooth");
   }, [chatItems.length, status, threadLoading]);
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort();
+    };
+  }, []);
 
-    if (!message.trim() || isBusy) return;
+  async function sendMessageText(text) {
+    if (!text.trim() || isBusy) return false;
 
-    const submittedMessage = message.trim();
+    const submittedMessage = text.trim();
     setMessage("");
     const sent = await submitMessage(submittedMessage);
 
     if (!sent) {
       setMessage(submittedMessage);
+    }
+
+    return sent;
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (hasDraftMessage) {
+      await sendMessageText(message);
+      return;
+    }
+
+    handleMicClick();
+  }
+
+  async function submitVoiceTranscript() {
+    if (voiceSubmitStartedRef.current) return;
+
+    const transcript = finalTranscriptRef.current.trim();
+    if (!transcript) {
+      setVoiceStatus("");
+      setVoiceError("Suara belum terbaca. Coba tekan mic lalu bicara lagi.");
+      return;
+    }
+
+    voiceSubmitStartedRef.current = true;
+    setVoiceStatus("Mengirim hasil suara...");
+    setVoiceError("");
+
+    await sendMessageText(transcript);
+    setVoiceStatus("");
+  }
+
+  function handleVoiceError(error) {
+    const messages = {
+      "not-allowed": "Izin mikrofon ditolak. Aktifkan izin mic di browser untuk memakai suara.",
+      "service-not-allowed": "Izin mikrofon ditolak. Aktifkan izin mic di browser untuk memakai suara.",
+      "no-speech": "Suara belum terdengar. Coba tekan mic lalu bicara lagi.",
+      "audio-capture": "Mikrofon tidak ditemukan. Periksa perangkat mic kamu.",
+      network: "Koneksi pengenal suara bermasalah. Coba lagi sebentar.",
+    };
+
+    voiceHadErrorRef.current = true;
+    setVoiceError(messages[error] ?? "Input suara belum bisa diproses. Coba lagi ya.");
+    setVoiceStatus("");
+  }
+
+  function handleMicClick() {
+    if (isBusy) return;
+
+    if (!SpeechRecognition) {
+      setVoiceError(SPEECH_RECOGNITION_UNSUPPORTED);
+      setVoiceStatus("");
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setVoiceStatus("Memproses suara...");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "id-ID";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    finalTranscriptRef.current = "";
+    voiceHadErrorRef.current = false;
+    voiceSubmitStartedRef.current = false;
+    setVoiceError("");
+    setVoiceStatus("Mendengarkan...");
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setVoiceStatus("Mendengarkan...");
+    };
+
+    recognition.onresult = (event) => {
+      let interimTranscript = "";
+      let finalTranscript = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0]?.transcript ?? "";
+        if (event.results[index].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      if (finalTranscript.trim()) {
+        finalTranscriptRef.current = `${finalTranscriptRef.current} ${finalTranscript}`.trim();
+      }
+
+      setMessage(`${finalTranscriptRef.current} ${interimTranscript}`.trim());
+    };
+
+    recognition.onerror = (event) => {
+      handleVoiceError(event.error);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+
+      if (!voiceHadErrorRef.current) {
+        void submitVoiceTranscript();
+      }
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setIsListening(false);
+      setVoiceStatus("");
+      setVoiceError("Input suara belum bisa dimulai. Coba lagi sebentar.");
     }
   }
 
@@ -153,14 +292,51 @@ export function AppChatPage() {
             />
           </div>
 
-          <Button type="submit" disabled={isBusy || !message.trim()} className="h-12 gap-2 px-4 sm:px-5">
-            <Send aria-hidden className="h-4 w-4" />
-            <span className="hidden sm:inline">Kirim</span>
+          <Button
+            type="submit"
+            disabled={isBusy || isListening}
+            aria-pressed={!hasDraftMessage && isListening}
+            className={cn(
+              "h-12 gap-2 px-4 transition-all duration-200 sm:h-14 sm:px-5",
+              !hasDraftMessage && "min-w-[6.75rem]",
+              !hasDraftMessage && isListening && "shadow-[0_0_0_6px_hsl(var(--primary)/0.14)]",
+              !hasDraftMessage && !isSpeechSupported && "bg-muted text-muted-foreground hover:bg-muted",
+            )}
+          >
+            {hasDraftMessage ? (
+              <>
+                <Send aria-hidden className="h-4 w-4" />
+                <span className="hidden sm:inline">Kirim</span>
+              </>
+            ) : isSpeechSupported ? (
+              <>
+                <span className="relative flex items-center justify-center">
+                  {isListening ? (
+                    <span className="absolute h-7 w-7 animate-ping rounded-full bg-primary-foreground/25" aria-hidden />
+                  ) : null}
+                  <Mic aria-hidden className="relative h-4 w-4" />
+                </span>
+                <span>{isListening ? "Dengar" : "Bicara"}</span>
+              </>
+            ) : (
+              <>
+                <MicOff aria-hidden className="h-4 w-4" />
+                <span>Bicara</span>
+              </>
+            )}
           </Button>
         </div>
-        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <LockKeyhole aria-hidden className="h-3.5 w-3.5" />
-          <span>Data hanya disimpan setelah kamu konfirmasi.</span>
+        <div className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <LockKeyhole aria-hidden className="h-3.5 w-3.5" />
+            <span>Data hanya disimpan setelah kamu konfirmasi.</span>
+          </div>
+          <p
+            aria-live="polite"
+            className={cn("min-h-4 text-left sm:text-right", voiceError ? "text-destructive" : "text-muted-foreground")}
+          >
+            {voiceError || voiceStatus || (!isSpeechSupported ? SPEECH_RECOGNITION_UNSUPPORTED : "")}
+          </p>
         </div>
       </form>
     </section>
