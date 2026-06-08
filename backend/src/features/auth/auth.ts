@@ -12,6 +12,14 @@ export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.API_BASE_URL,
   trustedOrigins,
+  advanced: env.NODE_ENV === "production"
+    ? {
+        defaultCookieAttributes: {
+          sameSite: "none",
+          secure: true,
+        },
+      }
+    : undefined,
   database: {
     db,
     type: "postgres",
