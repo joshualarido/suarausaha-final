@@ -19,15 +19,12 @@ import { AppReportsPage } from "@/features/app/pages/AppReportsPage";
 import { AppStockPage } from "@/features/app/pages/AppStockPage";
 import { AppTransactionsPage } from "@/features/app/pages/AppTransactionsPage";
 import { LoginPage } from "@/features/auth/pages/LoginPage";
-import { ApiTesterPage } from "@/features/docs/ApiTesterPage";
 import { OnboardingBusinessPage } from "@/features/onboarding/pages/OnboardingBusinessPage";
 
 export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/docs" element={<ApiTesterPage />} />
-
         <Route element={<PublicOnlyRoute />}>
           <Route path="/login" element={<LoginPage />} />
         </Route>
