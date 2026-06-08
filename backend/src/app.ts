@@ -19,7 +19,7 @@ export const app = express();
 const allowedOrigins = new Set([
   env.API_BASE_URL,
   env.FRONTEND_ORIGIN,
-  ...(env.NODE_ENV === "production" ? [] : ["http://127.0.0.1:5173"]),
+  "http://127.0.0.1:5173",
 ]);
 
 app.use(

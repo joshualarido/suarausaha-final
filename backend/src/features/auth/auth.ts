@@ -5,7 +5,7 @@ import { db } from "../../lib/database.js";
 const trustedOrigins = [
   env.API_BASE_URL,
   env.FRONTEND_ORIGIN,
-  ...(env.NODE_ENV === "production" ? [] : ["http://127.0.0.1:5173"]),
+  "http://127.0.0.1:5173",
 ];
 
 export const auth = betterAuth({

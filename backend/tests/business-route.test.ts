@@ -291,7 +291,7 @@ describe("business routes", () => {
     expect(markProductTourCompletedForOwner).not.toHaveBeenCalled();
   });
 
-  it("resets onboarding state through debug endpoint in non-production mode", async () => {
+  it("resets onboarding state through debug endpoint", async () => {
     vi.mocked(resetBusinessForOwner).mockResolvedValue(true as never);
 
     const response = await request(app).post("/api/v1/debug/reset-onboarding").send({});

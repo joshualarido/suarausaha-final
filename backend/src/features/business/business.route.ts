@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { z } from "zod";
-import { env } from "../../config/env.js";
 import { requireAuth } from "../auth/auth.middleware.js";
 import {
   createBusinessForOwner,
@@ -162,17 +161,6 @@ businessRouter.post("/business/product-tour/complete", requireAuth, async (req, 
 });
 
 businessRouter.post("/debug/reset-onboarding", requireAuth, async (req, res) => {
-  if (env.NODE_ENV === "production") {
-    res.status(403).json({
-      success: false,
-      error: {
-        code: "FORBIDDEN",
-        message: "Debug reset is not available in production.",
-      },
-    });
-    return;
-  }
-
   const didReset = await resetBusinessForOwner(req.user!.id);
 
   res.json({

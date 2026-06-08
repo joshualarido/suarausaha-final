@@ -8,24 +8,36 @@ const tourSteps = [
     target: "sidebar-business",
     title: "Bagian Bisnis",
     description: "Di sini kamu bisa melihat neraca, transaksi, stok, aset, utang, dan piutang usaha.",
+    mobileDescription:
+      "Di HP, buka menu dari tombol navigasi di kiri atas. Bagian Bisnis berisi neraca, transaksi, stok, aset, utang, dan piutang usaha.",
   },
   {
     target: "sidebar-settings",
     title: "Bagian Pengaturan",
     description: "Atur profil bisnis, akun pembayaran, dan katalog jualan dari bagian ini.",
+    mobileDescription:
+      "Di HP, buka menu dari tombol navigasi di kiri atas lalu cari bagian Pengaturan untuk profil bisnis, akun pembayaran, dan katalog jualan.",
   },
   {
     target: "sura-header",
     title: "Kenalan dengan Sura",
     description: "Sura adalah asisten yang membantu mencatat transaksi dan menjawab ringkasan usaha dengan bahasa sederhana.",
+    mobileDescription:
+      "Sura adalah layar chat utama. Kamu bisa mengetik transaksi atau bertanya ringkasan usaha dengan bahasa sehari-hari.",
   },
   {
     target: "sura-help-cta",
     title: "Mulai perjalanan pembukuan",
     description: "Klik tombol Sura bisa apa? untuk melihat contoh hal yang bisa kamu tanyakan atau catat.",
+    mobileDescription:
+      "Tekan Sura bisa apa? untuk melihat contoh hal yang bisa kamu tanyakan atau catat. Kalau tombol belum terlihat, geser sedikit ke area chat.",
     isFinal: true,
   },
 ];
+
+function isMobileViewport() {
+  return window.innerWidth < 768;
+}
 
 function getTargetRect(target) {
   const element = document.querySelector(`[data-tour-target="${target}"]`);
@@ -52,7 +64,15 @@ function getFocusStyle(rect) {
   };
 }
 
-function getDialogStyle(rect) {
+function getDialogStyle(rect, isMobile) {
+  if (isMobile) {
+    return {
+      right: 12,
+      bottom: 12,
+      left: 12,
+    };
+  }
+
   if (!rect) {
     return {
       top: "50%",
@@ -82,18 +102,22 @@ function getDialogStyle(rect) {
 export function ProductTourOverlay({ onCompleted, onFinalAction }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState(null);
+  const [isMobile, setIsMobile] = useState(() => isMobileViewport());
   const [isCompleting, setIsCompleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const step = tourSteps[stepIndex];
-  const focusStyle = targetRect ? getFocusStyle(targetRect) : null;
-  const dialogStyle = useMemo(() => getDialogStyle(targetRect), [targetRect]);
+  const activeDescription = isMobile ? step.mobileDescription ?? step.description : step.description;
+  const focusStyle = !isMobile && targetRect ? getFocusStyle(targetRect) : null;
+  const dialogStyle = useMemo(() => getDialogStyle(targetRect, isMobile), [isMobile, targetRect]);
 
   useEffect(() => {
     let frameId = 0;
 
     function updateRect() {
       frameId = window.requestAnimationFrame(() => {
-        setTargetRect(getTargetRect(step.target));
+        const nextIsMobile = isMobileViewport();
+        setIsMobile(nextIsMobile);
+        setTargetRect(nextIsMobile ? null : getTargetRect(step.target));
       });
     }
 
@@ -153,7 +177,7 @@ export function ProductTourOverlay({ onCompleted, onFinalAction }) {
       )}
 
       <section
-        className="motion-enter-scale fixed z-20 w-[min(22.5rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-4 text-card-foreground shadow-2xl"
+        className="motion-enter-scale fixed z-20 rounded-xl border border-border bg-card p-4 text-card-foreground shadow-2xl md:w-[min(22.5rem,calc(100vw-2rem))]"
         style={dialogStyle}
       >
         <div className="flex items-start justify-between gap-3">
@@ -176,7 +200,7 @@ export function ProductTourOverlay({ onCompleted, onFinalAction }) {
           </button>
         </div>
 
-        <p className="su-type-body mt-3 text-muted-foreground">{step.description}</p>
+        <p className="su-type-body mt-3 text-muted-foreground">{activeDescription}</p>
 
         {errorMessage ? (
           <p className="su-type-helper mt-3 text-danger" role="alert">
