@@ -303,48 +303,50 @@ export function DashboardLayout() {
 
         <div className="su-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-5">
           <nav className="grid gap-5" aria-label="Navigasi aplikasi">
-            {navigationGroups.map((group, groupIndex) => (
-              <section key={group.label ?? "top"} className="grid gap-2">
-                {group.label && !isCollapsed ? (
-                  <p
-                    className="su-type-meta px-3 text-muted-foreground"
-                    data-tour-target={group.label === "Bisnis" ? "sidebar-business" : group.label === "Pengaturan" ? "sidebar-settings" : undefined}
-                  >
-                    {group.label}
-                  </p>
-                ) : null}
+            {navigationGroups.map((group, groupIndex) => {
+              const tourTarget =
+                group.label === "Bisnis" ? "sidebar-business" : group.label === "Pengaturan" ? "sidebar-settings" : undefined;
 
-                {group.items.map((item) => {
-                  const Icon = item.icon;
+              return (
+                <section key={group.label ?? "top"} className="grid gap-2" data-tour-target={tourTarget}>
+                  {group.label && !isCollapsed ? (
+                    <p className="su-type-meta px-3 text-muted-foreground">
+                      {group.label}
+                    </p>
+                  ) : null}
 
-                  return (
-                    <NavLink
-                      key={item.href}
-                      to={item.href}
-                      end={item.end}
-                      title={isCollapsed ? item.label : undefined}
-                      onClick={() => {
-                        if (isMobile) setIsMobileSidebarOpen(false);
-                      }}
-                      className={({ isActive }) =>
-                        [
-                          "su-type-ui flex h-11 items-center gap-2.5 rounded-lg transition",
-                          isCollapsed ? "justify-center px-0" : "px-3",
-                          isActive
-                            ? "bg-secondary text-primary shadow-[0_10px_28px_rgba(54,92,145,0.12)]"
-                            : "text-muted-foreground hover:bg-background hover:text-foreground",
-                        ].join(" ")
-                      }
-                    >
-                      <Icon aria-hidden className="h-5 w-5 shrink-0" />
-                      {!isCollapsed ? <span className="truncate">{item.label}</span> : null}
-                    </NavLink>
-                  );
-                })}
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
 
-                {groupIndex === 0 ? <div className="border-t border-border" /> : null}
-              </section>
-            ))}
+                    return (
+                      <NavLink
+                        key={item.href}
+                        to={item.href}
+                        end={item.end}
+                        title={isCollapsed ? item.label : undefined}
+                        onClick={() => {
+                          if (isMobile) setIsMobileSidebarOpen(false);
+                        }}
+                        className={({ isActive }) =>
+                          [
+                            "su-type-ui flex h-11 items-center gap-2.5 rounded-lg transition",
+                            isCollapsed ? "justify-center px-0" : "px-3",
+                            isActive
+                              ? "bg-secondary text-primary shadow-[0_10px_28px_rgba(54,92,145,0.12)]"
+                              : "text-muted-foreground hover:bg-background hover:text-foreground",
+                          ].join(" ")
+                        }
+                      >
+                        <Icon aria-hidden className="h-5 w-5 shrink-0" />
+                        {!isCollapsed ? <span className="truncate">{item.label}</span> : null}
+                      </NavLink>
+                    );
+                  })}
+
+                  {groupIndex === 0 ? <div className="border-t border-border" /> : null}
+                </section>
+              );
+            })}
           </nav>
 
           <section className="relative mt-auto pt-6">

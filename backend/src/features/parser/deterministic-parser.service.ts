@@ -50,25 +50,43 @@ function parseAmount(message: string): number | null {
 }
 
 function parseQuantityBeforeMenuItem(message: string, menuItem: ParserMenuItemContext): number | null {
-  const normalizedMessage = normalizeSearchText(message);
   const candidates = [menuItem.name, ...menuItem.aliases].map(normalizeSearchText).filter(Boolean);
+  const quantityUnitPattern = "(porsi|pcs|pc|buah|gelas|botol|bungkus|paket|cup)";
 
   for (const candidate of candidates) {
-    const index = normalizedMessage.indexOf(candidate);
+    const matchedSegment = splitOrderSegments(message).find((segment) => segment.includes(candidate));
+    if (!matchedSegment) continue;
+
+    const index = matchedSegment.indexOf(candidate);
     if (index < 0) continue;
 
-    const beforeCandidate = normalizedMessage.slice(0, index).trim();
+    const beforeCandidate = matchedSegment.slice(0, index).trim();
     const quantityMatch = beforeCandidate.match(/(\d+)\s*$/);
-
-    if (!quantityMatch) {
-      return null;
+    if (quantityMatch) {
+      const quantity = Number(quantityMatch[1]);
+      return Number.isInteger(quantity) && quantity > 0 && quantity <= 99 ? quantity : null;
     }
 
-    const quantity = Number(quantityMatch[1]);
-    return Number.isInteger(quantity) && quantity > 0 ? quantity : null;
+    const afterCandidate = matchedSegment.slice(index + candidate.length).trim();
+    const afterQuantityMatch = afterCandidate.match(
+      new RegExp(`^(?:[^\\d,]+\\s+){0,3}?(\\d+)(?:\\s*${quantityUnitPattern}\\b)?`),
+    );
+    if (afterQuantityMatch) {
+      const quantity = Number(afterQuantityMatch[1]);
+      return Number.isInteger(quantity) && quantity > 0 && quantity <= 99 ? quantity : null;
+    }
   }
 
   return null;
+}
+
+function splitOrderSegments(message: string): string[] {
+  const normalizedMessage = normalizeInput(message).replace(/[^\p{L}\p{N},\s]/gu, " ");
+  return normalizedMessage
+    .replace(/\b(?:dan|and|plus|tambah)\b/g, ",")
+    .split(",")
+    .map((segment) => normalizeSearchText(segment))
+    .filter(Boolean);
 }
 
 function parsePaymentHint(message: string): "cash" | "non_cash" | null {
@@ -171,10 +189,47 @@ function parseAccountTransfer(input: ParseIntentInput, amount: number): ParseInt
 function findMatchingMenuItems(message: string, menuItems: ParserMenuItemContext[]): ParserMenuItemContext[] {
   const normalizedMessage = normalizeSearchText(message);
 
-  return menuItems.filter((item) => {
+  const matches = menuItems.filter((item) => {
     const candidates = [item.name, ...item.aliases].map(normalizeSearchText).filter(Boolean);
     return candidates.some((candidate) => normalizedMessage.includes(candidate));
   });
+
+  return removeGenericMenuMatches(message, matches);
+}
+
+function getMatchedMenuTerms(message: string, menuItem: ParserMenuItemContext): string[] {
+  const normalizedMessage = normalizeSearchText(message);
+  return [menuItem.name, ...menuItem.aliases]
+    .map(normalizeSearchText)
+    .filter((term) => term && normalizedMessage.includes(term));
+}
+
+function removeGenericMenuMatches(message: string, menuItems: ParserMenuItemContext[]): ParserMenuItemContext[] {
+  const matchDetails = menuItems.map((item) => {
+    const terms = getMatchedMenuTerms(message, item);
+    const bestTerm = terms.sort((a, b) => b.length - a.length)[0] ?? "";
+    return { item, bestTerm };
+  });
+
+  return matchDetails
+    .filter(({ bestTerm }, index) => {
+      if (!bestTerm) return true;
+      return !matchDetails.some(
+        (other, otherIndex) => otherIndex !== index && other.bestTerm.length > bestTerm.length && other.bestTerm.includes(bestTerm),
+      );
+    })
+    .map(({ item }) => item);
+}
+
+function hasSharedBestMenuTerm(message: string, menuItems: ParserMenuItemContext[]): boolean {
+  const bestTerms = menuItems
+    .map((item) => {
+      const terms = getMatchedMenuTerms(message, item);
+      return terms.sort((a, b) => b.length - a.length)[0] ?? "";
+    })
+    .filter(Boolean);
+
+  return new Set(bestTerms).size !== bestTerms.length;
 }
 
 function baseDescription(message: string): string {
@@ -214,6 +269,42 @@ export function createDeterministicProposedAction(
     affectedObject: context?.affectedObject ?? (inventory ? "Persediaan" : null),
     expectedEffects,
     warning: context?.warning ?? (inventory || expense ? "Saldo akun pembayaran akan diperiksa lagi sebelum disimpan." : null),
+  };
+}
+
+function buildSalesOrderAction(input: ParseIntentInput, menuItems: ParserMenuItemContext[]): ProposedAction {
+  const account = resolveDeterministicPaymentAccount(input);
+  const accountName = account?.name ?? input.defaultPaymentAccountName ?? "Kas";
+  const lines = menuItems.map((menuItem) => {
+    const quantity = parseQuantityBeforeMenuItem(input.message, menuItem) ?? 1;
+    const unitPrice = menuItem.defaultPrice!;
+    return {
+      productId: menuItem.id,
+      productName: menuItem.name,
+      spokenLabel: menuItem.name.toLowerCase(),
+      quantity,
+      unitPrice,
+      subtotal: quantity * unitPrice,
+      matchStatus: "matched" as const,
+    };
+  });
+  const amount = lines.reduce((sum, line) => sum + line.subtotal, 0);
+
+  return {
+    intent: "sales_income",
+    amount,
+    date: input.today,
+    paymentAccountId: account?.id ?? input.defaultPaymentAccountId,
+    paymentAccountName: account?.name ?? input.defaultPaymentAccountName,
+    description: `Jual ${lines.map((line) => `${line.quantity} ${line.productName}`).join(", ")}`,
+    affectedObject: lines.map((line) => line.productName).join(", "),
+    expectedEffects: [`${accountName} bertambah ${formatIdr(amount)}`, `Pendapatan bertambah ${formatIdr(amount)}`],
+    warning: "Nominal dihitung dari jumlah item dan harga menu. Periksa lagi sebelum disimpan.",
+    salesOrder: {
+      status: "draft",
+      totalAmount: amount,
+      lines,
+    },
   };
 }
 
@@ -287,12 +378,30 @@ export function createDeterministicIntentParser(): IntentParser {
       }
 
       if (matchingMenuItems.length > 1) {
+        const hasMissingPrice = matchingMenuItems.some((item) => item.defaultPrice === null);
+        if (!hasMissingPrice && !hasSharedBestMenuTerm(input.message, matchingMenuItems)) {
+          const proposedAction = buildSalesOrderAction(input, matchingMenuItems);
+
+          return {
+            status: "parsed",
+            proposedAction,
+            missingFields: [],
+            validationErrors: [],
+            confidence: 0.9,
+            parserModel: PARSER_MODEL,
+            parserVersion: PARSER_VERSION,
+            structuredPayload: proposedAction,
+          };
+        }
+
         return {
           status: "needs_clarification",
           proposedAction: null,
-          missingFields: ["menu_item"],
+          missingFields: hasMissingPrice ? ["amount"] : ["menu_item"],
           validationErrors: [],
-          question: "Menu mana yang dimaksud?",
+          question: hasMissingPrice
+            ? "Ada menu yang belum punya harga. Isi harga menu dulu di Katalog, lalu catat penjualan lagi."
+            : "Menu mana yang dimaksud?",
           options: matchingMenuItems.map((item) => ({ label: item.name, value: item.id })),
           confidence: 0.68,
           parserModel: PARSER_MODEL,

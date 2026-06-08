@@ -137,36 +137,89 @@ function findMenuMatches(input: ParseIntentInput, draft: GeminiParserDraft) {
   const menuItems = input.menuItems;
   const searchTerms = compactUnique([draft.affectedObject, draft.description, input.message]).map(normalize);
 
-  return menuItems.filter((item) => {
+  const matches = menuItems.filter((item) => {
     const menuTerms = compactUnique([item.name, ...item.aliases]).map(normalize);
     return searchTerms.some((searchTerm) =>
       menuTerms.some((menuTerm) => menuTerm.includes(searchTerm) || searchTerm.includes(menuTerm)),
     );
   });
+
+  return removeGenericMenuMatches(input.message, matches);
+}
+
+function getMatchedMenuTerms(message: string, menuItem: ParseIntentInput["menuItems"][number]): string[] {
+  const normalizedMessage = normalizeSearchText(message);
+  return compactUnique([menuItem.name, ...menuItem.aliases])
+    .map(normalizeSearchText)
+    .filter((term) => term && normalizedMessage.includes(term));
+}
+
+function removeGenericMenuMatches(
+  message: string,
+  menuItems: ParseIntentInput["menuItems"],
+): ParseIntentInput["menuItems"] {
+  const matchDetails = menuItems.map((item) => {
+    const terms = getMatchedMenuTerms(message, item);
+    const bestTerm = terms.sort((a, b) => b.length - a.length)[0] ?? "";
+    return { item, bestTerm };
+  });
+
+  return matchDetails
+    .filter(({ bestTerm }, index) => {
+      if (!bestTerm) return true;
+      return !matchDetails.some(
+        (other, otherIndex) => otherIndex !== index && other.bestTerm.length > bestTerm.length && other.bestTerm.includes(bestTerm),
+      );
+    })
+    .map(({ item }) => item);
+}
+
+function hasSharedBestMenuTerm(message: string, menuItems: ParseIntentInput["menuItems"]): boolean {
+  const bestTerms = menuItems
+    .map((item) => {
+      const terms = getMatchedMenuTerms(message, item);
+      return terms.sort((a, b) => b.length - a.length)[0] ?? "";
+    })
+    .filter(Boolean);
+
+  return new Set(bestTerms).size !== bestTerms.length;
+}
+
+function splitOrderSegments(message: string): string[] {
+  const normalizedMessage = normalize(message).replace(/[^\p{L}\p{N},\s]/gu, " ");
+  return normalizedMessage
+    .replace(/\b(?:dan|and|plus|tambah)\b/g, ",")
+    .split(",")
+    .map((segment) => normalizeSearchText(segment))
+    .filter(Boolean);
 }
 
 function parseQuantityBeforeMenuItem(message: string, menuItem: ParseIntentInput["menuItems"][number]): number | null {
-  const normalizedMessage = normalizeSearchText(message);
   const candidates = compactUnique([menuItem.name, ...menuItem.aliases]).map(normalizeSearchText).filter(Boolean);
   const quantityUnitPattern = "(porsi|pcs|pc|buah|gelas|botol|bungkus|paket|cup)";
 
   for (const candidate of candidates) {
-    const index = normalizedMessage.indexOf(candidate);
+    const matchedSegment = splitOrderSegments(message).find((segment) => segment.includes(candidate));
+    if (!matchedSegment) continue;
+
+    const index = matchedSegment.indexOf(candidate);
     if (index < 0) continue;
 
-    const beforeCandidate = normalizedMessage.slice(0, index).trim();
+    const beforeCandidate = matchedSegment.slice(0, index).trim();
     const beforeQuantityMatch = beforeCandidate.match(/(\d+)\s*$/);
     if (beforeQuantityMatch) {
       const quantity = Number(beforeQuantityMatch[1]);
-      if (Number.isInteger(quantity) && quantity > 0) return quantity;
+      if (Number.isInteger(quantity) && quantity > 0 && quantity <= 99) return quantity;
       return null;
     }
 
-    const afterCandidate = normalizedMessage.slice(index + candidate.length).split(",")[0].trim();
-    const afterQuantityMatch = afterCandidate.match(new RegExp(`^(?:[^\\d,]+\\s+){0,3}?(\\d+)\\s*${quantityUnitPattern}\\b`));
+    const afterCandidate = matchedSegment.slice(index + candidate.length).trim();
+    const afterQuantityMatch = afterCandidate.match(
+      new RegExp(`^(?:[^\\d,]+\\s+){0,3}?(\\d+)(?:\\s*${quantityUnitPattern}\\b)?`),
+    );
     if (afterQuantityMatch) {
       const quantity = Number(afterQuantityMatch[1]);
-      if (Number.isInteger(quantity) && quantity > 0) return quantity;
+      if (Number.isInteger(quantity) && quantity > 0 && quantity <= 99) return quantity;
       return null;
     }
   }
@@ -420,6 +473,20 @@ export function validateParserDraft(
     }
 
     if (matchedMenus.length > 1) {
+      if (hasSharedBestMenuTerm(input.message, matchedMenus)) {
+        return clarificationResult({
+          draft,
+          parserModel,
+          missingFields: compactUnique([...missingFields, "menu_item"]),
+          validationErrors,
+          question: "Ada beberapa menu yang mirip. Pilih menu yang dimaksud dulu.",
+          options: matchedMenus.map((item) => ({
+            label: item.name,
+            value: item.id,
+          })),
+        });
+      }
+
       const missingPrice = matchedMenus.find((item) => item.defaultPrice === null);
       if (missingPrice) {
         return clarificationResult({

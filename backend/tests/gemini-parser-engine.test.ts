@@ -109,6 +109,7 @@ describe("Gemini parser prompt", () => {
     expect(prompt.clarificationRules).toContain(
       "If the transaction type is unclear, ask: Transaksi ini paling cocok dicatat sebagai apa?",
     );
+    expect(JSON.stringify(prompt.safetyRules)).toContain("For POS sales with multiple catalog items");
     expect(prompt.openLiabilities.map((item) => item.id)).toEqual(["liab_1"]);
     expect(prompt.openReceivables.map((item) => item.id)).toEqual(["recv_1"]);
   });
@@ -214,6 +215,41 @@ describe("Gemini parser draft validation", () => {
     expect(result.proposedAction?.warning).toContain("Akun pembayaran memakai default Kas");
   });
 
+  it("recomputes mixed-language POS order quantities from raw text even when Gemini draft amount is wrong", () => {
+    const result = validateParserDraft(
+      baseInput({ message: "jual 2 ayam geprek and 2 es teh" }),
+      baseDraft({
+        amount: 30_000,
+        paymentAccountId: null,
+        paymentAccountName: null,
+        description: "Jual 1 ayam geprek dan 1 es teh",
+        affectedObject: "Ayam Geprek",
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      amount: 60_000,
+      affectedObject: "Ayam Geprek, Es Teh",
+      salesOrder: {
+        totalAmount: 60_000,
+        lines: [
+          expect.objectContaining({
+            productName: "Ayam Geprek",
+            quantity: 2,
+            subtotal: 50_000,
+          }),
+          expect.objectContaining({
+            productName: "Es Teh",
+            quantity: 2,
+            subtotal: 10_000,
+          }),
+        ],
+      },
+    });
+  });
+
   it("uses quantities after menu names when the seller says porsi", () => {
     const result = validateParserDraft(
       baseInput({ message: "jual ayam geprek 2 porsi, es teh tawar 3 porsi" }),
@@ -222,6 +258,40 @@ describe("Gemini parser draft validation", () => {
         paymentAccountId: null,
         paymentAccountName: null,
         description: "Jual ayam geprek 2 porsi, es teh tawar 3 porsi",
+        affectedObject: null,
+        missingFields: ["amount"],
+      }),
+      "gemini-3.1-flash-lite",
+    );
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      amount: 65_000,
+      salesOrder: {
+        lines: [
+          expect.objectContaining({
+            productName: "Ayam Geprek",
+            quantity: 2,
+            subtotal: 50_000,
+          }),
+          expect.objectContaining({
+            productName: "Es Teh",
+            quantity: 3,
+            subtotal: 15_000,
+          }),
+        ],
+      },
+    });
+  });
+
+  it("uses quantities after menu names even when no unit word is spoken", () => {
+    const result = validateParserDraft(
+      baseInput({ message: "jual ayam geprek 2, es teh 3" }),
+      baseDraft({
+        amount: null,
+        paymentAccountId: null,
+        paymentAccountName: null,
+        description: "Jual ayam geprek 2, es teh 3",
         affectedObject: null,
         missingFields: ["amount"],
       }),

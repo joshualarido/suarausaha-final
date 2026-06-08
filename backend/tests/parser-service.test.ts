@@ -84,6 +84,59 @@ describe("deterministic intent parser", () => {
     });
   });
 
+  it("builds a multi-item POS sales order from catalog prices", async () => {
+    const parser = createDeterministicIntentParser();
+
+    const result = await parser.parse({
+      message: "Jual 2 ayam geprek and 2 es teh tunai",
+      businessId: "biz_123",
+      userId: "user_123",
+      today: "2026-05-23",
+      defaultPaymentAccountId: "acct_cash",
+      defaultPaymentAccountName: "Kas",
+      paymentAccounts: [{ id: "acct_cash", name: "Kas", type: "cash", isDefault: true }],
+      menuItems: [
+        {
+          id: "menu_ayam_geprek",
+          name: "Ayam Geprek",
+          aliases: ["geprek"],
+          defaultPrice: 15_000,
+          category: "Makanan",
+        },
+        {
+          id: "menu_es_teh",
+          name: "Es Teh",
+          aliases: ["esteh"],
+          defaultPrice: 5_000,
+          category: "Minuman",
+        },
+      ],
+    });
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent: "sales_income",
+      amount: 40_000,
+      affectedObject: "Ayam Geprek, Es Teh",
+      salesOrder: {
+        status: "draft",
+        totalAmount: 40_000,
+        lines: [
+          expect.objectContaining({
+            productId: "menu_ayam_geprek",
+            quantity: 2,
+            subtotal: 30_000,
+          }),
+          expect.objectContaining({
+            productId: "menu_es_teh",
+            quantity: 2,
+            subtotal: 10_000,
+          }),
+        ],
+      },
+    });
+  });
+
   it("asks for clarification when a menu item match has no default price", async () => {
     const parser = createDeterministicIntentParser();
 

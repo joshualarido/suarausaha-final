@@ -76,6 +76,8 @@ function buildPrompt(input: ParseIntentInput): string {
         "If the transaction type is unclear, set detectedIntent null, include missingFields ['intent'], and ask the user to choose a supported intent.",
         "If required data is missing for a clear intent, keep detectedIntent and ask only for the missing detail.",
         "For clear sales that mention exactly one active menu item with default price, quantity may be inferred from text and defaults to 1 when omitted.",
+        "For POS sales with multiple catalog items, keep detectedIntent sales_income and set multipleEvents false because this is one sale with multiple order lines.",
+        "For POS sales, attach each quantity to the nearest menu item phrase, for example 'jual 2 ayam geprek and 2 es teh' means 2 Ayam Geprek and 2 Es Teh.",
         "Menu prices may be used only for clear sales with a positive quantity and one exact active menu match.",
         "Use cash account when user says tunai/kas/cash, and use non-cash account when user says transfer/qris/debit/bank/e-wallet/kartu kredit.",
         "If the user names a payment account that is not in paymentAccounts, keep that name in paymentAccountName, leave paymentAccountId null, and ask the user to create that payment account first. Do not replace it with the default account.",
