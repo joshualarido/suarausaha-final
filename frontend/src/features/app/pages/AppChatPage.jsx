@@ -8,6 +8,7 @@ import { useChatThread } from "./useChatThread";
 const SPEECH_RECOGNITION_UNSUPPORTED =
   "Input suara gratis hanya didukung di browser tertentu seperti Chrome atau Edge. Kamu masih bisa mengetik transaksi.";
 const HELP_PROMPT = "Sura bisa apa?";
+const TOUR_HELP_EVENT = "suarausaha:tour-help-cta";
 
 export function AppChatPage() {
   const [message, setMessage] = useState("");
@@ -71,6 +72,17 @@ export function AppChatPage() {
 
     return sent;
   }
+
+  useEffect(() => {
+    function handleTourHelpRequest() {
+      void sendMessageText(HELP_PROMPT);
+    }
+
+    window.addEventListener(TOUR_HELP_EVENT, handleTourHelpRequest);
+    return () => {
+      window.removeEventListener(TOUR_HELP_EVENT, handleTourHelpRequest);
+    };
+  });
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -206,7 +218,7 @@ export function AppChatPage() {
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-card shadow-sm sm:rounded-xl sm:border sm:border-border">
-      <header className="border-b border-border bg-card px-3 py-3 sm:px-4 md:px-6">
+      <header className="border-b border-border bg-card px-3 py-3 sm:px-4 md:px-6" data-tour-target="sura-header">
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <div className="h-10 w-10 shrink-0 rounded-full border border-border bg-secondary/50 sm:h-11 sm:w-11" aria-hidden />

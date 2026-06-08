@@ -12,6 +12,7 @@ const INITIAL_SESSION_STATE = {
   businessId: null,
   businessName: null,
   onboardingStatus: null,
+  hasCompletedProductTour: null,
 };
 
 function normalizeAuthenticatedSession(userPayload, businessPayload) {
@@ -31,6 +32,7 @@ function normalizeAuthenticatedSession(userPayload, businessPayload) {
     businessId: data?.businessId ?? null,
     businessName: businessData?.name ?? null,
     onboardingStatus: data?.onboardingStatus ?? null,
+    hasCompletedProductTour: businessData?.hasCompletedProductTour ?? null,
   };
 }
 
@@ -42,6 +44,7 @@ function unauthenticatedSession() {
     businessId: null,
     businessName: null,
     onboardingStatus: null,
+    hasCompletedProductTour: null,
   };
 }
 

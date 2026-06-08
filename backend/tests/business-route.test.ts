@@ -16,6 +16,7 @@ vi.mock("../src/features/business/business.service.js", () => {
     findBusinessByOwnerId: vi.fn(),
     getBusinessOnboardingContextForOwner: vi.fn(),
     createBusinessForOwner: vi.fn(),
+    markProductTourCompletedForOwner: vi.fn(),
     resetBusinessForOwner: vi.fn(),
     updateBusinessNameForOwner: vi.fn(),
   };
@@ -26,6 +27,7 @@ import { auth } from "../src/features/auth/auth.js";
 import {
   createBusinessForOwner,
   getBusinessOnboardingContextForOwner,
+  markProductTourCompletedForOwner,
   resetBusinessForOwner,
   updateBusinessNameForOwner,
 } from "../src/features/business/business.service.js";
@@ -54,6 +56,7 @@ describe("business routes", () => {
         ownerId: "user_123",
         name: "Warung Test",
         currency: "IDR",
+        productTourCompletedAt: null,
         createdAt: new Date("2026-05-12T10:00:00Z"),
         updatedAt: new Date("2026-05-12T10:00:00Z"),
       },
@@ -71,7 +74,9 @@ describe("business routes", () => {
         id: "business_123",
         name: "Warung Test",
         currency: "IDR",
+        productTourCompletedAt: null,
         hasCompletedOpeningBalance: false,
+        hasCompletedProductTour: false,
         onboardingStatus: "opening_balance_pending",
         createdAt: "2026-05-12T10:00:00.000Z",
       },
@@ -92,6 +97,7 @@ describe("business routes", () => {
           ownerId: "user_123",
           name: "Warung Test",
           currency: "IDR",
+          productTourCompletedAt: null,
           createdAt: new Date("2026-05-12T10:00:00Z"),
           updatedAt: new Date("2026-05-12T10:00:00Z"),
         },
@@ -105,6 +111,7 @@ describe("business routes", () => {
       ownerId: "user_123",
       name: "Warung Test",
       currency: "IDR",
+      productTourCompletedAt: null,
       createdAt: new Date("2026-05-12T10:00:00Z"),
       updatedAt: new Date("2026-05-12T10:00:00Z"),
     } as never);
@@ -120,6 +127,8 @@ describe("business routes", () => {
         id: "business_123",
         name: "Warung Test",
         currency: "IDR",
+        productTourCompletedAt: null,
+        hasCompletedProductTour: false,
         hasCompletedOpeningBalance: false,
         onboardingStatus: "opening_balance_pending",
         createdAt: "2026-05-12T10:00:00.000Z",
@@ -162,6 +171,7 @@ describe("business routes", () => {
       ownerId: "user_123",
       name: "Warung Baru",
       currency: "IDR",
+      productTourCompletedAt: new Date("2026-05-14T10:00:00Z"),
       createdAt: new Date("2026-05-12T10:00:00Z"),
       updatedAt: new Date("2026-05-13T10:00:00Z"),
     } as never);
@@ -172,6 +182,7 @@ describe("business routes", () => {
         ownerId: "user_123",
         name: "Warung Baru",
         currency: "IDR",
+        productTourCompletedAt: new Date("2026-05-14T10:00:00Z"),
         createdAt: new Date("2026-05-12T10:00:00Z"),
         updatedAt: new Date("2026-05-13T10:00:00Z"),
       },
@@ -191,7 +202,9 @@ describe("business routes", () => {
         id: "business_123",
         name: "Warung Baru",
         currency: "IDR",
+        productTourCompletedAt: "2026-05-14T10:00:00.000Z",
         hasCompletedOpeningBalance: true,
+        hasCompletedProductTour: true,
         onboardingStatus: "active",
         createdAt: "2026-05-12T10:00:00.000Z",
       },
@@ -228,6 +241,54 @@ describe("business routes", () => {
         message: "Business profile not found.",
       },
     });
+  });
+
+  it("marks the authenticated user's product tour as complete", async () => {
+    vi.mocked(markProductTourCompletedForOwner).mockResolvedValue({
+      id: "business_123",
+      ownerId: "user_123",
+      name: "Warung Test",
+      currency: "IDR",
+      productTourCompletedAt: new Date("2026-05-14T10:00:00Z"),
+      createdAt: new Date("2026-05-12T10:00:00Z"),
+      updatedAt: new Date("2026-05-14T10:00:00Z"),
+    } as never);
+
+    const response = await request(app).post("/api/v1/business/product-tour/complete").send({});
+
+    expect(response.status).toBe(200);
+    expect(markProductTourCompletedForOwner).toHaveBeenCalledWith("user_123");
+    expect(response.body).toEqual({
+      success: true,
+      data: {
+        hasCompletedProductTour: true,
+        productTourCompletedAt: "2026-05-14T10:00:00.000Z",
+      },
+    });
+  });
+
+  it("returns 404 when completing product tour without a business", async () => {
+    vi.mocked(markProductTourCompletedForOwner).mockResolvedValue(null);
+
+    const response = await request(app).post("/api/v1/business/product-tour/complete").send({});
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      success: false,
+      error: {
+        code: "NOT_FOUND",
+        message: "Business profile not found.",
+      },
+    });
+  });
+
+  it("requires authentication before completing product tour", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    const response = await request(app).post("/api/v1/business/product-tour/complete").send({});
+
+    expect(response.status).toBe(401);
+    expect(markProductTourCompletedForOwner).not.toHaveBeenCalled();
   });
 
   it("resets onboarding state through debug endpoint in non-production mode", async () => {

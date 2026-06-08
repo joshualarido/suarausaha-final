@@ -68,10 +68,16 @@ export async function ensureDatabaseSchema(): Promise<void> {
         "ownerId" text NOT NULL UNIQUE,
         "name" text NOT NULL,
         "currency" text NOT NULL DEFAULT 'IDR',
+        "productTourCompletedAt" timestamptz,
         "createdAt" timestamptz NOT NULL DEFAULT now(),
         "updatedAt" timestamptz NOT NULL DEFAULT now(),
         FOREIGN KEY ("ownerId") REFERENCES "user"("id") ON DELETE CASCADE
       );
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE "business"
+      ADD COLUMN IF NOT EXISTS "productTourCompletedAt" timestamptz;
     `.execute(db);
 
     await sql`

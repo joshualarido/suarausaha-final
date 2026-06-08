@@ -46,6 +46,7 @@ export async function createBusinessForOwner(ownerId: string, name: string): Pro
         ownerId,
         name,
         currency: "IDR",
+        productTourCompletedAt: null,
         createdAt: now,
         updatedAt: now,
       })
@@ -70,6 +71,27 @@ export async function updateBusinessNameForOwner(ownerId: string, name: string):
     .updateTable("business")
     .set({
       name,
+      updatedAt: new Date(),
+    })
+    .where("id", "=", existingBusiness.id)
+    .returningAll()
+    .executeTakeFirst();
+
+  return updated ?? null;
+}
+
+export async function markProductTourCompletedForOwner(ownerId: string): Promise<BusinessRow | null> {
+  const existingBusiness = await findBusinessByOwnerId(ownerId);
+
+  if (!existingBusiness) {
+    return null;
+  }
+
+  const completedAt = existingBusiness.productTourCompletedAt ?? new Date();
+  const updated = await db
+    .updateTable("business")
+    .set({
+      productTourCompletedAt: completedAt,
       updatedAt: new Date(),
     })
     .where("id", "=", existingBusiness.id)

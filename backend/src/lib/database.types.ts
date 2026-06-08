@@ -3,6 +3,7 @@ export interface BusinessRow {
   ownerId: string;
   name: string;
   currency: string;
+  productTourCompletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

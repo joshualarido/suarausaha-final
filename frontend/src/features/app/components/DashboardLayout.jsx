@@ -27,6 +27,9 @@ import { useTheme } from "@/features/app/theme-context";
 import { ApiClientError, APP_NOTIFICATION_EVENT } from "@/lib/api-client";
 import { signOutUser } from "@/features/auth/auth.api";
 import { BrandLogo } from "./BrandLogo";
+import { ProductTourOverlay } from "./ProductTourOverlay";
+
+const TOUR_HELP_EVENT = "suarausaha:tour-help-cta";
 
 const navigationGroups = [
   {
@@ -93,6 +96,7 @@ export function DashboardLayout() {
   const userInitial = useMemo(() => getInitial(session.user?.name), [session.user?.name]);
   const businessName = session.businessName ?? "Usaha Kamu";
   const isChatRoute = location.pathname === "/app";
+  const shouldShowProductTour = session.hasCompletedProductTour === false;
   const breadcrumbs = useMemo(() => {
     const pathToLabel = {
       app: "Sura",
@@ -302,7 +306,10 @@ export function DashboardLayout() {
             {navigationGroups.map((group, groupIndex) => (
               <section key={group.label ?? "top"} className="grid gap-2">
                 {group.label && !isCollapsed ? (
-                  <p className="su-type-meta px-3 text-muted-foreground">
+                  <p
+                    className="su-type-meta px-3 text-muted-foreground"
+                    data-tour-target={group.label === "Bisnis" ? "sidebar-business" : group.label === "Pengaturan" ? "sidebar-settings" : undefined}
+                  >
                     {group.label}
                   </p>
                 ) : null}
@@ -584,6 +591,20 @@ export function DashboardLayout() {
         </section>
       </div>
 
+      {shouldShowProductTour ? (
+        <ProductTourOverlay
+          onCompleted={session.refreshSession}
+          onFinalAction={() => {
+            navigate("/app");
+            window.setTimeout(() => {
+              window.dispatchEvent(new CustomEvent(TOUR_HELP_EVENT));
+            }, 80);
+          }}
+        />
+      ) : null}
+
     </main>
   );
 }
+
+export { TOUR_HELP_EVENT };

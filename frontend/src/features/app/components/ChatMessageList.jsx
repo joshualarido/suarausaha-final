@@ -34,9 +34,10 @@ export function ChatMessageList({
               type="button"
               onClick={onHelpRequest}
               disabled={isBusy}
+              data-tour-target="sura-help-cta"
               className="su-type-ui inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
-              <span>Tanya Sura bisa apa?</span>
+              <span>Sura bisa apa?</span>
               <ArrowRight className="h-4 w-4" aria-hidden />
             </button>
           </div>

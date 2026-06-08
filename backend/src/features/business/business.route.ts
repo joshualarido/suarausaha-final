@@ -5,6 +5,7 @@ import { requireAuth } from "../auth/auth.middleware.js";
 import {
   createBusinessForOwner,
   getBusinessOnboardingContextForOwner,
+  markProductTourCompletedForOwner,
   resetBusinessForOwner,
   type BusinessOnboardingContext,
   updateBusinessNameForOwner,
@@ -19,6 +20,8 @@ function toBusinessProfileResponse(context: BusinessOnboardingContext): {
   name: string;
   currency: string;
   hasCompletedOpeningBalance: boolean;
+  hasCompletedProductTour: boolean;
+  productTourCompletedAt: Date | null;
   onboardingStatus: "profile_created" | "opening_balance_pending" | "active";
   createdAt: Date;
 } {
@@ -29,6 +32,8 @@ function toBusinessProfileResponse(context: BusinessOnboardingContext): {
     name: business.name,
     currency: business.currency,
     hasCompletedOpeningBalance: context.hasCompletedOpeningBalance,
+    hasCompletedProductTour: Boolean(business.productTourCompletedAt),
+    productTourCompletedAt: business.productTourCompletedAt,
     onboardingStatus: context.onboardingStatus,
     createdAt: business.createdAt,
   };
@@ -130,6 +135,29 @@ businessRouter.patch("/business", requireAuth, async (req, res) => {
       ...onboardingContext,
       business: updatedBusiness,
     }),
+  });
+});
+
+businessRouter.post("/business/product-tour/complete", requireAuth, async (req, res) => {
+  const updatedBusiness = await markProductTourCompletedForOwner(req.user!.id);
+
+  if (!updatedBusiness) {
+    res.status(404).json({
+      success: false,
+      error: {
+        code: "NOT_FOUND",
+        message: "Business profile not found.",
+      },
+    });
+    return;
+  }
+
+  res.json({
+    success: true,
+    data: {
+      hasCompletedProductTour: Boolean(updatedBusiness.productTourCompletedAt),
+      productTourCompletedAt: updatedBusiness.productTourCompletedAt,
+    },
   });
 });
 

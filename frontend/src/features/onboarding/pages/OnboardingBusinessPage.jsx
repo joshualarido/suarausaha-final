@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ChefHat, CheckCircle2, Landmark, Lock, LogOut, Plus, ShieldCheck, Trash2, Wallet } from "lucide-react";
+import { ArrowLeft, ChefHat, CheckCircle2, Landmark, Lock, LogOut, Plus, ShieldCheck, Sparkles, Trash2, Wallet } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSession } from "@/features/auth/session-context";
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,19 @@ const detailGroups = [
   },
 ];
 
+const demoBusinessName = "Warung Ayam Geprek Demo";
+const demoCatalogRows = [
+  { name: "Ayam Geprek", defaultPriceText: "18000", aliasesText: "geprek, ayam" },
+  { name: "Es Teh", defaultPriceText: "5000", aliasesText: "teh, minuman" },
+];
+const demoOpeningBalancePayload = {
+  paymentAccounts: [{ name: "Kas", type: "cash", openingBalance: 1500000 }],
+  inventoryItems: [{ value: 750000 }],
+  assetItems: [{ name: "Peralatan dapur", value: 2500000 }],
+  liabilityItems: [{ lenderName: "Supplier ayam", amount: 300000 }],
+  receivableItems: [{ customerName: "Pelanggan katering", amount: 200000 }],
+};
+
 function createId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 }
@@ -82,6 +95,35 @@ function createCatalogRow() {
     name: "",
     defaultPriceText: "",
     aliasesText: "",
+  };
+}
+
+function createDemoCatalogRows() {
+  return demoCatalogRows.map((row) => ({
+    id: createId(),
+    savedId: "",
+    ...row,
+  }));
+}
+
+function createDemoDetailRows() {
+  return {
+    inventoryItems: [{ id: createId(), value: String(demoOpeningBalancePayload.inventoryItems[0].value) }],
+    assetItems: demoOpeningBalancePayload.assetItems.map((item) => ({
+      id: createId(),
+      name: item.name,
+      value: String(item.value),
+    })),
+    liabilityItems: demoOpeningBalancePayload.liabilityItems.map((item) => ({
+      id: createId(),
+      lenderName: item.lenderName,
+      amount: String(item.amount),
+    })),
+    receivableItems: demoOpeningBalancePayload.receivableItems.map((item) => ({
+      id: createId(),
+      customerName: item.customerName,
+      amount: String(item.amount),
+    })),
   };
 }
 
@@ -223,6 +265,7 @@ export function OnboardingBusinessPage() {
   const [step, setStep] = useState("profile");
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [isSkippingOnboarding, setIsSkippingOnboarding] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -299,7 +342,7 @@ export function OnboardingBusinessPage() {
     displayedPreview.receivableValue;
   const openingLiabilities = displayedPreview.debtValue;
   const openingEquity = displayedPreview.openingEquity ?? openingAssets - openingLiabilities;
-  const isBusy = isPreviewing || isConfirming || isSigningOut;
+  const isBusy = isPreviewing || isConfirming || isSkippingOnboarding || isSigningOut;
 
   async function ensureBusinessProfile() {
     const trimmedName = businessName.trim();
@@ -310,6 +353,62 @@ export function OnboardingBusinessPage() {
 
     await createBusinessProfile(trimmedName);
     setHasBusinessForSubmit(true);
+  }
+
+  async function createDemoMenuItems() {
+    await Promise.all(
+      demoCatalogRows.map(async (row) => {
+        try {
+          await createMenuItem({
+            name: row.name,
+            aliases: textToAliases(row.aliasesText),
+            defaultPrice: parseOptionalPrice(row.defaultPriceText),
+          });
+        } catch (error) {
+          if (error instanceof ApiClientError && error.status === 409) return;
+          throw error;
+        }
+      }),
+    );
+  }
+
+  async function handleSkipOnboarding() {
+    setIsSkippingOnboarding(true);
+    setErrorMessage("");
+
+    setBusinessName(demoBusinessName);
+    setPaymentAccounts(demoOpeningBalancePayload.paymentAccounts.map((account) => ({
+      id: account.type === "cash" ? "cash" : createId(),
+      name: account.name,
+      type: account.type,
+      openingBalance: String(account.openingBalance),
+    })));
+    setCatalogRows(createDemoCatalogRows());
+    setDetailRows(createDemoDetailRows());
+    setPreviewData(null);
+
+    try {
+      if (hasBusinessForSubmit || session.hasBusiness) {
+        await updateBusinessProfile(demoBusinessName);
+      } else {
+        await createBusinessProfile(demoBusinessName);
+        setHasBusinessForSubmit(true);
+      }
+
+      await createDemoMenuItems();
+      await confirmOpeningBalance(demoOpeningBalancePayload);
+      await session.refreshSession();
+      navigate("/app", { replace: true });
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 409) {
+        await session.refreshSession();
+        navigate("/app", { replace: true });
+        return;
+      }
+
+      setErrorMessage(normalizeError(error, "Gagal melewati setup MVP. Coba lagi sebentar."));
+      setIsSkippingOnboarding(false);
+    }
   }
 
   function validateCurrentStep() {
@@ -548,6 +647,16 @@ export function OnboardingBusinessPage() {
 
   return (
     <main className="min-h-screen bg-background px-4 py-6 text-foreground md:py-10">
+      <Button
+        type="button"
+        onClick={handleSkipOnboarding}
+        disabled={isBusy}
+        className="fixed right-4 bottom-4 z-30 h-11 gap-2 rounded-full px-4 text-sm font-bold shadow-lg md:right-6 md:bottom-6"
+      >
+        <Sparkles aria-hidden className="h-4 w-4" />
+        {isSkippingOnboarding ? "Menyiapkan demo..." : "Lewati setup MVP"}
+      </Button>
+
       <section className="motion-enter-scale mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-7xl overflow-hidden rounded-xl border border-border bg-card shadow-[0_18px_55px_rgba(17,24,39,0.08)] md:min-h-[calc(100vh-5rem)] md:grid-cols-[0.9fr_1.7fr]">
         <aside className="motion-enter-right flex flex-col gap-8 border-b border-border p-8 md:border-r md:border-b-0 md:p-10 lg:p-12">
           <BrandLogo />

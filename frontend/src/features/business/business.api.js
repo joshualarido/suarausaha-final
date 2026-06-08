@@ -18,6 +18,14 @@ export async function updateBusinessProfile(name) {
   });
 }
 
+export async function completeProductTour() {
+  return apiRequest("/api/v1/business/product-tour/complete", {
+    method: "POST",
+    body: {},
+    notifyOnSuccess: false,
+  });
+}
+
 export async function debugResetOnboarding() {
   return apiRequest("/api/v1/debug/reset-onboarding", {
     method: "POST",
