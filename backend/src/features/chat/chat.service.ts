@@ -90,6 +90,12 @@ function formatIdr(amount: number): string {
   return `Rp${amount.toLocaleString("id-ID")}`;
 }
 
+function normalizeSearchText(value: string): string {
+  return normalizeInput(value)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "");
+}
+
 function isCancelCommand(message: string): boolean {
   const normalized = normalizeInput(message).toLowerCase();
   return normalized === "batalkan" || normalized === "batal" || normalized === "cancel";
@@ -116,6 +122,13 @@ function isSalesCorrectionCommand(message: string): boolean {
 
 function isAdditiveSalesCorrectionCommand(message: string): boolean {
   return /\btambah\b/.test(normalizeInput(message).toLowerCase());
+}
+
+function isPendingConfirmationEditCommand(message: string): boolean {
+  const normalized = normalizeInput(message).toLowerCase();
+  return /\b(ganti|ubah|edit|revisi|koreksi|jadinya|jadi|seharusnya|harusnya|akun|tanggal|nominal|jumlah|keterangan|catatan|target|objek|dari|ke)\b/.test(
+    normalized,
+  );
 }
 
 function isAutoWriteIntent(intent: ProposedAction["intent"]): boolean {
@@ -415,7 +428,11 @@ function rebuildSalesOrderAction(baseAction: ProposedAction, lines: NonNullable<
   };
 }
 
-async function getPendingSalesOrderAction(input: ParseChatMessageInput): Promise<ProposedAction | null> {
+async function getLatestPendingTransactionAction(input: ParseChatMessageInput): Promise<{
+  confirmationId: string;
+  parsedCommandId: string | null;
+  action: ProposedAction;
+} | null> {
   const pending = await listPendingIntentConfirmations({
     businessId: input.businessId,
     userId: input.userId,
@@ -425,12 +442,19 @@ async function getPendingSalesOrderAction(input: ParseChatMessageInput): Promise
   for (const confirmation of pending) {
     if (confirmation.type !== "transaction") continue;
     const action = parseProposedActionJson(confirmation.proposedActionJson);
-    if (action.intent === "sales_income" && action.salesOrder?.lines.length) {
-      return action;
-    }
+    return {
+      confirmationId: confirmation.id,
+      parsedCommandId: confirmation.parsedCommandId,
+      action,
+    };
   }
 
   return null;
+}
+
+async function getPendingSalesOrderAction(input: ParseChatMessageInput): Promise<ProposedAction | null> {
+  const pending = await getLatestPendingTransactionAction(input);
+  return pending?.action.intent === "sales_income" && pending.action.salesOrder?.lines.length ? pending.action : null;
 }
 
 async function tryHandleSalesCorrection(input: ParseChatMessageInput): Promise<ChatParseResponse | null> {
@@ -482,6 +506,203 @@ async function tryHandleSalesCorrection(input: ParseChatMessageInput): Promise<C
   if (!updatedLines) return null;
 
   const proposedAction = rebuildSalesOrderAction(pendingAction, updatedLines);
+
+  return runFinancialWrite(async (tx) => {
+    await appendChatMessage(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      role: "user",
+      kind: "text",
+      content: {
+        text: input.message,
+      },
+    });
+
+    const parsedCommand = await tx
+      .insertInto("parsed_commands")
+      .values(salesCorrectionParsedCommandValues(input, proposedAction))
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const confirmation = await createConfirmationRequest(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      parsedCommandId: parsedCommand.id,
+      proposedAction,
+    });
+
+    await appendChatMessage(tx, {
+      businessId: input.businessId,
+      userId: input.userId,
+      role: "assistant",
+      kind: "confirmation_card",
+      parsedCommandId: parsedCommand.id,
+      confirmationRequestId: confirmation.id,
+      content: {
+        status: "requires_confirmation",
+        confirmationRequestId: confirmation.id,
+        proposedAction,
+        confirmation: toConfirmationResponse(confirmation),
+      },
+    });
+
+    return {
+      status: "requires_confirmation",
+      confirmationRequestId: confirmation.id,
+      proposedAction,
+      confirmation: toConfirmationResponse(confirmation),
+    };
+  });
+}
+
+function findPaymentAccountInMessage(message: string, accounts: Awaited<ReturnType<typeof getPaymentAccountContext>>["paymentAccounts"]) {
+  const normalized = normalizeSearchText(message);
+  const matches = accounts.filter((account) => {
+    const normalizedName = normalizeSearchText(account.name);
+    const normalizedId = normalizeSearchText(account.id);
+    return normalizedName && (normalized.includes(normalizedName) || normalized.includes(normalizedId));
+  });
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function parseAmountEdit(message: string): number | null {
+  const normalized = normalizeInput(message).toLowerCase().replace(/rp\s*/g, "");
+  const match = normalized.match(/(\d+(?:[.,]\d+)?)\s*(ribu|rb|juta|jt)?/);
+  if (!match) return null;
+
+  const numberValue = Number(match[1].replace(/\./g, "").replace(",", "."));
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return null;
+
+  const unit = match[2] ?? "";
+  if (unit === "juta" || unit === "jt") return Math.round(numberValue * 1_000_000);
+  if (unit === "ribu" || unit === "rb") return Math.round(numberValue * 1_000);
+  return Math.round(numberValue);
+}
+
+function parseDateEdit(message: string): string | null {
+  const normalized = normalizeInput(message).toLowerCase();
+  const isoMatch = normalized.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (isoMatch) return isoMatch[1];
+
+  const monthNumbers: Record<string, string> = {
+    januari: "01",
+    februari: "02",
+    maret: "03",
+    april: "04",
+    mei: "05",
+    juni: "06",
+    juli: "07",
+    agustus: "08",
+    september: "09",
+    oktober: "10",
+    november: "11",
+    desember: "12",
+  };
+  const match = normalized.match(/\b(?:tanggal\s*)?(\d{1,2})\s+(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\s+(\d{4})\b/);
+  if (!match) return null;
+
+  const day = match[1].padStart(2, "0");
+  return `${match[3]}-${monthNumbers[match[2]]}-${day}`;
+}
+
+function extractTextEdit(message: string, fieldPattern: RegExp): string | null {
+  const match = message.match(fieldPattern);
+  const value = match?.[1]?.trim();
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : null;
+}
+
+function rebuildExpectedEffects(action: ProposedAction): string[] {
+  const amount = formatIdr(action.amount);
+  const accountName = action.paymentAccountName ?? "Kas";
+  switch (action.intent) {
+    case "sales_income":
+      return [`${accountName} bertambah ${amount}`, `Pendapatan bertambah ${amount}`];
+    case "owner_capital_contribution":
+      return [`${accountName} bertambah ${amount}`, `Modal pemilik bertambah ${amount}`];
+    case "inventory_purchase_value":
+      return [`${accountName} berkurang ${amount}`, `Nilai persediaan bertambah ${amount}`];
+    case "asset_record_or_purchase":
+      return [`Aset usaha bertambah ${amount}`, `${accountName} dapat berkurang ${amount} jika ini pembelian tunai`];
+    case "liability_created":
+      return action.paymentAccountId
+        ? [`${accountName} bertambah ${amount}`, `Utang ${action.affectedObject ?? ""}`.trim() + ` bertambah ${amount}`]
+        : [`Utang ${action.affectedObject ?? ""}`.trim() + ` bertambah ${amount}`];
+    case "liability_payment":
+      return [`${accountName} berkurang ${amount}`, `Utang ${action.affectedObject ?? ""}`.trim() + ` berkurang ${amount}`];
+    case "receivable_created":
+      return [`Piutang ${action.affectedObject ?? ""}`.trim() + ` bertambah ${amount}`, `Pendapatan bertambah ${amount}`];
+    case "receivable_payment":
+      return [`${accountName} bertambah ${amount}`, `Piutang ${action.affectedObject ?? ""}`.trim() + ` berkurang ${amount}`];
+    case "owner_withdrawal":
+      return [`${accountName} berkurang ${amount}`, `Prive bertambah ${amount}`];
+    case "account_transfer":
+      return [`${accountName} berkurang ${amount}`, `${action.destinationPaymentAccountName ?? "Akun tujuan"} bertambah ${amount}`];
+    case "reversal":
+      return [`Pembalikan transaksi sebesar ${amount}`];
+    case "general_expense":
+    default:
+      return [`${accountName} berkurang ${amount}`, `Biaya bertambah ${amount}`];
+  }
+}
+
+async function tryHandlePendingConfirmationEdit(input: ParseChatMessageInput): Promise<ChatParseResponse | null> {
+  if (!isPendingConfirmationEditCommand(input.message)) return null;
+
+  const pending = await getLatestPendingTransactionAction(input);
+  if (!pending) return null;
+
+  const accountContext = await getPaymentAccountContext(input.businessId);
+  const matchedAccount = findPaymentAccountInMessage(input.message, accountContext.paymentAccounts);
+  const amount = parseAmountEdit(input.message);
+  const date = parseDateEdit(input.message);
+  const description = extractTextEdit(input.message, /\b(?:keterangan|catatan|deskripsi)(?:nya)?\s*(?:jadi|ke|:)?\s+(.+)$/i);
+  const affectedObject = extractTextEdit(
+    input.message,
+    /\b(?:target|objek|persediaan|stok|aset|utang|piutang|pelanggan|menu)(?:nya)?\s*(?:jadi|ke|:)?\s+(.+)$/i,
+  );
+
+  let proposedAction: ProposedAction = {
+    ...pending.action,
+    ...(amount ? { amount } : {}),
+    ...(date ? { date } : {}),
+    ...(description ? { description } : {}),
+    ...(affectedObject ? { affectedObject } : {}),
+  };
+
+  if (matchedAccount) {
+    const normalized = normalizeInput(input.message).toLowerCase();
+    const editsDestination = proposedAction.intent === "account_transfer" && /\b(ke|tujuan)\b/.test(normalized) && !/\b(dari|asal)\b/.test(normalized);
+    proposedAction = editsDestination
+      ? {
+          ...proposedAction,
+          destinationPaymentAccountId: matchedAccount.id,
+          destinationPaymentAccountName: matchedAccount.name,
+        }
+      : {
+          ...proposedAction,
+          paymentAccountId: matchedAccount.id,
+          paymentAccountName: matchedAccount.name,
+        };
+  }
+
+  if (proposedAction === pending.action) return null;
+  if (
+    proposedAction.amount === pending.action.amount &&
+    proposedAction.date === pending.action.date &&
+    proposedAction.paymentAccountId === pending.action.paymentAccountId &&
+    proposedAction.destinationPaymentAccountId === pending.action.destinationPaymentAccountId &&
+    proposedAction.description === pending.action.description &&
+    proposedAction.affectedObject === pending.action.affectedObject
+  ) {
+    return null;
+  }
+
+  proposedAction = {
+    ...proposedAction,
+    expectedEffects: rebuildExpectedEffects(proposedAction),
+    warning: "Perubahan dari input teks/suara. Periksa lagi sebelum disimpan.",
+  };
 
   return runFinancialWrite(async (tx) => {
     await appendChatMessage(tx, {
@@ -765,6 +986,9 @@ export async function parseChatMessage(input: ParseChatMessageInput): Promise<Ch
 
   const salesCorrectionResult = await tryHandleSalesCorrection(input);
   if (salesCorrectionResult) return salesCorrectionResult;
+
+  const pendingConfirmationEditResult = await tryHandlePendingConfirmationEdit(input);
+  if (pendingConfirmationEditResult) return pendingConfirmationEditResult;
 
   const parserInput = await createParserInput(input);
   const parserResult = createInventoryOrExpenseClarification(parserInput) ?? (await parserEngine.parse(parserInput));

@@ -611,6 +611,81 @@ describe("chat auto-write mode", () => {
     });
   });
 
+  it("edits the payment account on an active confirmation card from follow-up input", async () => {
+    vi.mocked(listPaymentAccountsByBusinessId).mockResolvedValue([
+      {
+        id: "acct_cash",
+        businessId: "biz_123",
+        name: "Kas",
+        type: "cash",
+        currentBalance: "250000",
+        isDefault: true,
+        status: "active",
+      },
+      {
+        id: "acct_bca",
+        businessId: "biz_123",
+        name: "BCA",
+        type: "non_cash",
+        currentBalance: "500000",
+        isDefault: false,
+        status: "active",
+      },
+    ] as never);
+    vi.mocked(listPendingIntentConfirmations).mockResolvedValue([
+      {
+        id: "confirm_old",
+        businessId: "biz_123",
+        userId: "user_123",
+        parsedCommandId: "parsed_old",
+        type: "transaction",
+        status: "pending",
+        proposedActionJson: {
+          intent: "inventory_purchase_value",
+          amount: 80_000,
+          date: "2026-05-25",
+          paymentAccountId: "acct_cash",
+          paymentAccountName: "Kas",
+          description: "Beli stok ayam",
+          affectedObject: "Stok ayam",
+          expectedEffects: ["Kas berkurang Rp80.000", "Nilai persediaan bertambah Rp80.000"],
+          warning: null,
+        },
+      },
+    ] as never);
+    vi.mocked(createConfirmationRequest).mockResolvedValue({
+      id: "confirm_new",
+      proposedActionJson: {},
+    } as never);
+
+    const result = await parseChatMessage({
+      businessId: "biz_123",
+      userId: "user_123",
+      message: "ganti akun ke BCA",
+    });
+
+    expect(result).toMatchObject({
+      status: "requires_confirmation",
+      confirmationRequestId: "confirm_new",
+      proposedAction: {
+        intent: "inventory_purchase_value",
+        paymentAccountId: "acct_bca",
+        paymentAccountName: "BCA",
+        expectedEffects: ["BCA berkurang Rp80.000", "Nilai persediaan bertambah Rp80.000"],
+      },
+    });
+    expect(parserEngine.parse).not.toHaveBeenCalled();
+    expect(createConfirmationRequest).toHaveBeenCalledWith(
+      fakeTx as never,
+      expect.objectContaining({
+        proposedAction: expect.objectContaining({
+          paymentAccountId: "acct_bca",
+          paymentAccountName: "BCA",
+        }),
+      }),
+    );
+  });
+
   it("clarifies ambiguous bahan purchases before parser output can auto-save", async () => {
     const result = await parseChatMessage({
       businessId: "biz_123",

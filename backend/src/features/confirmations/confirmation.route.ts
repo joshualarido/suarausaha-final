@@ -16,10 +16,29 @@ import { runFinancialWrite } from "../../lib/financial-write.js";
 import { appendChatMessage } from "../chat/chat-message.service.js";
 
 const editConfirmationSchema = z.object({
+  intent: z
+    .enum([
+      "sales_income",
+      "general_expense",
+      "inventory_purchase_value",
+      "asset_record_or_purchase",
+      "liability_created",
+      "liability_payment",
+      "receivable_created",
+      "receivable_payment",
+      "owner_capital_contribution",
+      "owner_withdrawal",
+      "account_transfer",
+      "reversal",
+    ])
+    .optional(),
   amount: z.number().int().positive().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   paymentAccountId: z.string().min(1).nullable().optional(),
   paymentAccountName: z.string().min(1).nullable().optional(),
+  destinationPaymentAccountId: z.string().min(1).nullable().optional(),
+  destinationPaymentAccountName: z.string().min(1).nullable().optional(),
+  affectedObject: z.string().trim().min(1).nullable().optional(),
   description: z.string().trim().min(1).optional(),
 });
 

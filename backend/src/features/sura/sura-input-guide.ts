@@ -2,7 +2,8 @@ export type SuraInputGuideRouteType =
   | "write_action"
   | "report_request"
   | "analytics_query"
-  | "pending_sales_edit";
+  | "pending_sales_edit"
+  | "pending_confirmation_edit";
 
 export interface SuraInputGuideItem {
   label: string;
@@ -104,6 +105,13 @@ export const SURA_INPUT_GUIDE: SuraInputGuideSection[] = [
         example: "tambah 2 es teh",
         routeType: "pending_sales_edit",
         note: "Dipakai saat kartu konfirmasi penjualan masih aktif.",
+      },
+      {
+        label: "Ubah kartu konfirmasi",
+        keywords: ["ganti", "ubah", "akun", "tanggal", "nominal", "keterangan"],
+        example: "ganti akun ke BCA",
+        routeType: "pending_confirmation_edit",
+        note: "Dipakai saat kartu konfirmasi masih aktif; bisa ubah akun, nominal, tanggal, target, atau keterangan sebelum disimpan.",
       },
     ],
   },

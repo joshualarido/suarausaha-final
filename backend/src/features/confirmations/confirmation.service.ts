@@ -106,7 +106,20 @@ export async function listPendingIntentConfirmations(input: {
 }
 
 export interface EditConfirmationRequestInput extends ConfirmConfirmationRequestInput {
-  patch: Partial<Pick<ProposedAction, "amount" | "date" | "paymentAccountId" | "paymentAccountName" | "description">>;
+  patch: Partial<
+    Pick<
+      ProposedAction,
+      | "intent"
+      | "amount"
+      | "date"
+      | "paymentAccountId"
+      | "paymentAccountName"
+      | "destinationPaymentAccountId"
+      | "destinationPaymentAccountName"
+      | "affectedObject"
+      | "description"
+    >
+  >;
 }
 
 export async function cancelPendingConfirmationsInTransaction(
@@ -180,6 +193,44 @@ function parseNeracaPayload(value: unknown): { reportDate: string } {
 
 function parseAction(value: unknown): ProposedAction {
   return parseProposedActionJson(value);
+}
+
+function formatIdr(amount: number): string {
+  return `Rp${amount.toLocaleString("id-ID")}`;
+}
+
+function rebuildExpectedEffects(action: ProposedAction): string[] {
+  const amount = formatIdr(action.amount);
+  const accountName = action.paymentAccountName ?? "Kas";
+  switch (action.intent) {
+    case "sales_income":
+      return [`${accountName} bertambah ${amount}`, `Pendapatan bertambah ${amount}`];
+    case "owner_capital_contribution":
+      return [`${accountName} bertambah ${amount}`, `Modal pemilik bertambah ${amount}`];
+    case "inventory_purchase_value":
+      return [`${accountName} berkurang ${amount}`, `Nilai persediaan bertambah ${amount}`];
+    case "asset_record_or_purchase":
+      return [`Aset usaha bertambah ${amount}`, `${accountName} dapat berkurang ${amount} jika ini pembelian tunai`];
+    case "liability_created":
+      return action.paymentAccountId
+        ? [`${accountName} bertambah ${amount}`, `Utang ${action.affectedObject ?? ""}`.trim() + ` bertambah ${amount}`]
+        : [`Utang ${action.affectedObject ?? ""}`.trim() + ` bertambah ${amount}`];
+    case "liability_payment":
+      return [`${accountName} berkurang ${amount}`, `Utang ${action.affectedObject ?? ""}`.trim() + ` berkurang ${amount}`];
+    case "receivable_created":
+      return [`Piutang ${action.affectedObject ?? ""}`.trim() + ` bertambah ${amount}`, `Pendapatan bertambah ${amount}`];
+    case "receivable_payment":
+      return [`${accountName} bertambah ${amount}`, `Piutang ${action.affectedObject ?? ""}`.trim() + ` berkurang ${amount}`];
+    case "owner_withdrawal":
+      return [`${accountName} berkurang ${amount}`, `Prive bertambah ${amount}`];
+    case "account_transfer":
+      return [`${accountName} berkurang ${amount}`, `${action.destinationPaymentAccountName ?? "Akun tujuan"} bertambah ${amount}`];
+    case "reversal":
+      return [`Pembalikan transaksi sebesar ${amount}`];
+    case "general_expense":
+    default:
+      return [`${accountName} berkurang ${amount}`, `Biaya bertambah ${amount}`];
+  }
 }
 
 export function buildTransactionConfirmationNotification(action: ProposedAction): ConfirmationNotification {
@@ -601,6 +652,11 @@ export async function editConfirmationRequest(input: EditConfirmationRequestInpu
     const proposedAction = parseAction({
       ...parseAction(confirmation.proposedActionJson),
       ...input.patch,
+      expectedEffects: rebuildExpectedEffects({
+        ...parseAction(confirmation.proposedActionJson),
+        ...input.patch,
+      }),
+      warning: "Perubahan dari edit konfirmasi. Periksa lagi sebelum disimpan.",
     });
 
     await tx

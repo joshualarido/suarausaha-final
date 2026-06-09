@@ -27,7 +27,7 @@ type GuideSection = {
     label: string;
     keywords: string[];
     example: string;
-    routeType: "write_action" | "report_request" | "analytics_query" | "pending_sales_edit";
+    routeType: "write_action" | "report_request" | "analytics_query" | "pending_sales_edit" | "pending_confirmation_edit";
   }>;
 };
 
@@ -64,6 +64,12 @@ describe("Sura help input guide", () => {
           routeType: "write_action",
         }),
         expect.objectContaining({
+          label: "Ubah kartu konfirmasi",
+          keywords: ["ganti", "ubah", "akun", "tanggal", "nominal", "keterangan"],
+          example: "ganti akun ke BCA",
+          routeType: "pending_confirmation_edit",
+        }),
+        expect.objectContaining({
           label: "Neraca",
           keywords: ["neraca", "laporan neraca"],
           example: "buat neraca bulan ini",
@@ -88,7 +94,7 @@ describe("Sura help input guide", () => {
 
     const guideItems = flattenGuide(result.data.inputGuide);
     for (const item of guideItems) {
-      if (item.routeType === "pending_sales_edit") continue;
+      if (item.routeType === "pending_sales_edit" || item.routeType === "pending_confirmation_edit") continue;
 
       expect(classifySuraIntent(item.example)).toMatchObject({
         type: item.routeType,
