@@ -75,7 +75,7 @@ The database is still Supabase Postgres for this MVP. Set `DATABASE_URL` in Rend
 Required Render environment variables for `suarausaha-api`:
 
 - `NODE_ENV=production`
-- `API_BASE_URL=https://suarausaha-api.onrender.com`
+- `API_BASE_URL=https://suarausaha-web.onrender.com`
 - `FRONTEND_ORIGIN=https://suarausaha-web.onrender.com`
 - `DATABASE_URL`
 - `BETTER_AUTH_SECRET`
@@ -85,14 +85,16 @@ Required Render environment variables for `suarausaha-api`:
 
 Required Render environment variable for `suarausaha-web`:
 
-- `VITE_API_BASE_URL=https://suarausaha-api.onrender.com`
+- `VITE_API_BASE_URL=https://suarausaha-web.onrender.com`
 - `VITE_FRONTEND_ORIGIN=https://suarausaha-web.onrender.com`
 
-If Render changes either service URL because the service name is unavailable, update `API_BASE_URL`, `FRONTEND_ORIGIN`, `VITE_API_BASE_URL`, `VITE_FRONTEND_ORIGIN`, and the Google OAuth redirect URI to match the actual URLs.
+The static web service rewrites `/api/*` to `https://suarausaha-api.onrender.com/api/*`. Keep frontend API calls on the web origin so auth cookies remain first-party in Chrome incognito and privacy-restricted browsers.
+
+If Render changes either service URL because the service name is unavailable, update `API_BASE_URL`, `FRONTEND_ORIGIN`, `VITE_API_BASE_URL`, `VITE_FRONTEND_ORIGIN`, the static `/api/*` rewrite destination, and the Google OAuth redirect URI to match the actual URLs.
 
 Google OAuth production callback:
 
-- `https://suarausaha-api.onrender.com/api/auth/callback/google`
+- `https://suarausaha-web.onrender.com/api/auth/callback/google`
 
 The backend validates production env on startup and exits if required secrets are missing, placeholders are used, Gemini is enabled without an API key, or the database points to localhost. The MVP parser should use `PARSER_ENGINE=deterministic`; Gemini is optional and should only be enabled after a separate parser review.
 

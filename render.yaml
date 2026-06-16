@@ -12,7 +12,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: API_BASE_URL
-        value: https://suarausaha-api.onrender.com
+        value: https://suarausaha-web.onrender.com
       - key: FRONTEND_ORIGIN
         value: https://suarausaha-web.onrender.com
       - key: DATABASE_URL
@@ -35,10 +35,13 @@ services:
     autoDeploy: true
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://suarausaha-api.onrender.com
+        value: https://suarausaha-web.onrender.com
       - key: VITE_FRONTEND_ORIGIN
         value: https://suarausaha-web.onrender.com
     routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://suarausaha-api.onrender.com/api/*
       - type: rewrite
         source: /*
         destination: /index.html

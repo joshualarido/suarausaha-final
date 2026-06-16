@@ -15,11 +15,14 @@ export const auth = betterAuth({
   advanced: env.NODE_ENV === "production"
     ? {
         defaultCookieAttributes: {
-          sameSite: "none",
+          sameSite: "lax",
           secure: true,
         },
       }
     : undefined,
+  account: {
+    storeStateStrategy: "cookie",
+  },
   database: {
     db,
     type: "postgres",

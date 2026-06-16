@@ -6,7 +6,7 @@ import { createEnvConfig } from "../src/config/env.js";
 const productionEnv = {
   NODE_ENV: "production",
   PORT: "3000",
-  API_BASE_URL: "https://suarausaha-api.onrender.com",
+  API_BASE_URL: "https://suarausaha-web.onrender.com",
   FRONTEND_ORIGIN: "https://suarausaha-web.onrender.com",
   BETTER_AUTH_SECRET: "a-production-secret-that-is-long-enough",
   GOOGLE_CLIENT_ID: "google-client-id",
@@ -31,7 +31,7 @@ describe("env config", () => {
     const env = createEnvConfig(productionEnv);
 
     expect(env.NODE_ENV).toBe("production");
-    expect(env.API_BASE_URL).toBe("https://suarausaha-api.onrender.com");
+    expect(env.API_BASE_URL).toBe("https://suarausaha-web.onrender.com");
   });
 
   it("rejects placeholder secrets in production", () => {
