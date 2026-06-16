@@ -24,6 +24,7 @@ describe("env config", () => {
     expect(env.NODE_ENV).toBe("development");
     expect(env.API_BASE_URL).toBe("http://localhost:3000");
     expect(env.FRONTEND_ORIGIN).toBe("http://localhost:5173");
+    expect(env.PARSER_ENGINE).toBe("deterministic");
   });
 
   it("accepts complete production configuration", () => {

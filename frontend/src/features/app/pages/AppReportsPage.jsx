@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, Download, FileText, RefreshCw, Save, Scale, UserRound } from "lucide-react";
+import { CalendarDays, Check, Download, FileText, Loader2, RefreshCw, Save, Scale, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DetailMoneyRow, DetailRow, DetailSection, FloatingDetailPanel } from "@/features/app/components/FloatingDetailPanel";
 import { LoadingState } from "@/features/app/components/LoadingState";
@@ -50,9 +50,9 @@ function ReportGroup({ group }) {
 
 function ReportColumn({ tone, title, total, groups, footerLabel }) {
   const toneClasses = {
-    blue: "border-[#C7DAF1] bg-[#F6FAFF] text-primary",
-    orange: "border-[#F7D8B9] bg-[#FFF8F0] text-[#A94D00]",
-    green: "border-[#CFE7DA] bg-[#F4FBF6] text-[#176C45]",
+    blue: "border-primary/20 bg-primary/10 text-primary dark:bg-primary/15 dark:text-primary",
+    orange: "border-warning/25 bg-warning/10 text-warning dark:bg-warning/12 dark:text-warning",
+    green: "border-success/25 bg-success/10 text-success dark:bg-success/12 dark:text-success",
   };
 
   return (
@@ -113,6 +113,7 @@ export function AppReportsPage() {
   const columns = useMemo(() => buildColumns(activeReport), [activeReport]);
   const isSavedReport = Boolean(activeReport?.id);
   const isBalanced = Boolean(activeReport?.equation?.isBalanced);
+  const isSaving = status === "saving";
 
   async function loadSavedReports() {
     const payload = await listNeracaSnapshots({ page: 1, limit: 20 });
@@ -260,9 +261,9 @@ export function AppReportsPage() {
               <RefreshCw className="h-4 w-4" />
               Preview
             </Button>
-            <Button type="button" disabled={status === "saving"} onClick={handleSaveSnapshot}>
-              <Save className="h-4 w-4" />
-              Simpan
+            <Button type="button" disabled={isSaving} onClick={handleSaveSnapshot}>
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSaving ? "Menyimpan..." : "Simpan"}
             </Button>
             <Button type="button" variant="outline" disabled={!isSavedReport || isDownloading} onClick={handleDownloadPdf}>
               <Download className="h-4 w-4" />
@@ -279,7 +280,15 @@ export function AppReportsPage() {
       ) : null}
 
       {activeReport && columns ? (
-        <section className="group rounded-lg border border-border bg-card p-4 shadow-sm md:p-5">
+        <section className="group relative rounded-lg border border-border bg-card p-4 shadow-sm md:p-5">
+          {isSaving ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-card/72 backdrop-blur-[2px]">
+              <div className="motion-enter-scale flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground shadow-lg">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden />
+                <span>Menyimpan neraca...</span>
+              </div>
+            </div>
+          ) : null}
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="su-type-section-title text-foreground">Ringkasan Neraca</h2>
@@ -303,7 +312,7 @@ export function AppReportsPage() {
             <ReportColumn tone="green" title="Ekuitas" total={activeReport.ekuitas.total} groups={columns.ekuitas} footerLabel="Total Ekuitas" />
           </div>
 
-          <div className="mt-4 grid gap-4 rounded-lg border border-[#D4E1F0] bg-secondary/30 p-4 lg:grid-cols-[1.2fr_1fr_auto_1fr_auto_1fr] lg:items-center">
+          <div className="mt-4 grid gap-4 rounded-lg border border-border bg-secondary/25 p-4 lg:grid-cols-[1.2fr_1fr_auto_1fr_auto_1fr] lg:items-center">
             <div className="flex items-center gap-3">
               <Scale className="h-8 w-8 text-primary" />
               <div>
@@ -319,8 +328,8 @@ export function AppReportsPage() {
             </div>
             <p className="text-2xl font-semibold text-muted-foreground">=</p>
             <div>
-              <p className="su-type-meta text-[#A94D00]">Total Utang</p>
-              <p className="text-lg font-semibold text-[#A94D00]">{formatIdr(activeReport.equation.totalUtang)}</p>
+              <p className="su-type-meta text-warning">Total Utang</p>
+              <p className="text-lg font-semibold text-warning">{formatIdr(activeReport.equation.totalUtang)}</p>
             </div>
             <p className="text-2xl font-semibold text-muted-foreground">+</p>
             <div>

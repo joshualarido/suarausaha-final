@@ -392,7 +392,7 @@ describe("Gemini parser draft validation", () => {
     expect(result.missingFields).toContain("paymentAccountId");
   });
 
-  it("asks which payment account to use when a money-out transaction has no payment account", () => {
+  it("uses the default payment account when a money-out transaction has no payment account", () => {
     const result = validateParserDraft(
       baseInput({ message: "bayar bensin 50 ribu tanggal 4 Juni 2026", today: "2026-06-05" }),
       baseDraft({
@@ -407,11 +407,14 @@ describe("Gemini parser draft validation", () => {
       "gemini-3.1-flash-lite",
     );
 
-    expect(result.status).toBe("needs_clarification");
-    expect(result.missingFields).toContain("paymentAccountId");
-    expect(result.question).toBe("Bayarnya pakai akun yang mana?");
-    expect(result.options).toContainEqual({ label: "Kas", value: "acct_cash" });
-    expect(result.options).toContainEqual({ label: "Bank / QRIS / E-wallet", value: "non_cash" });
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent: "general_expense",
+      amount: 50_000,
+      paymentAccountId: "acct_cash",
+      paymentAccountName: "Kas",
+    });
+    expect(result.proposedAction?.warning).toContain("Akun pembayaran memakai default Kas");
   });
 
   it("asks user to create a payment account when Gemini names an account that does not exist", () => {

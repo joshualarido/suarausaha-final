@@ -279,4 +279,64 @@ describe("deterministic intent parser", () => {
       warning: "Saldo akun asal akan diperiksa lagi sebelum disimpan.",
     });
   });
+
+  it.each([
+    ["bayar listrik 100 ribu pakai kas", "general_expense", "Listrik"],
+    ["beli kompor usaha 800 ribu pakai kas", "asset_record_or_purchase", "Kompor Usaha"],
+    ["pinjam uang usaha 2 juta dari Pak Budi masuk kas", "liability_created", "Pak Budi"],
+    ["bayar utang Supplier Ayam 200 ribu pakai kas", "liability_payment", "Supplier Ayam"],
+    ["Budi belum bayar 100 ribu", "receivable_created", "Budi"],
+    ["Budi bayar piutang 100 ribu tunai", "receivable_payment", "Budi"],
+    ["tambah modal 1 juta masuk kas", "owner_capital_contribution", null],
+    ["ambil uang usaha 300 ribu untuk pribadi", "owner_withdrawal", null],
+  ] as const)("parses keyword transaction '%s' as %s", async (message, intent, affectedObject) => {
+    const parser = createDeterministicIntentParser();
+
+    const result = await parser.parse({
+      message,
+      businessId: "biz_123",
+      userId: "user_123",
+      today: "2026-06-06",
+      defaultPaymentAccountId: "acct_cash",
+      defaultPaymentAccountName: "Kas",
+      paymentAccounts: [{ id: "acct_cash", name: "Kas", type: "cash", isDefault: true }],
+      menuItems: [],
+      openLiabilities: [{ id: "liab_1", lenderName: "Supplier Ayam", description: "Utang stok ayam", outstandingAmount: 250_000 }],
+      openReceivables: [{ id: "recv_1", customerName: "Budi", description: "Budi beli tempo", outstandingAmount: 150_000 }],
+    });
+
+    expect(result.status).toBe("parsed");
+    expect(result.proposedAction).toMatchObject({
+      intent,
+      amount: expect.any(Number),
+      paymentAccountId: intent === "receivable_created" ? null : "acct_cash",
+      affectedObject,
+    });
+  });
+
+  it("asks for the payment target when liability payment target is missing", async () => {
+    const parser = createDeterministicIntentParser();
+
+    const result = await parser.parse({
+      message: "bayar utang 100 ribu pakai kas",
+      businessId: "biz_123",
+      userId: "user_123",
+      today: "2026-06-06",
+      defaultPaymentAccountId: "acct_cash",
+      defaultPaymentAccountName: "Kas",
+      paymentAccounts: [{ id: "acct_cash", name: "Kas", type: "cash", isDefault: true }],
+      menuItems: [],
+      openLiabilities: [
+        { id: "liab_1", lenderName: "Supplier Ayam", description: "Utang stok ayam", outstandingAmount: 250_000 },
+        { id: "liab_2", lenderName: "Pak Budi", description: "Pinjaman modal", outstandingAmount: 500_000 },
+      ],
+    });
+
+    expect(result.status).toBe("needs_clarification");
+    expect(result.missingFields).toContain("affectedObject");
+    expect(result.options).toEqual([
+      { label: "Supplier Ayam", value: "Supplier Ayam" },
+      { label: "Pak Budi", value: "Pak Budi" },
+    ]);
+  });
 });

@@ -30,7 +30,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().min(1).default("gemini-3.1-flash-lite"),
-  PARSER_ENGINE: z.enum(["gemini", "deterministic"]).default("gemini"),
+  PARSER_ENGINE: z.enum(["gemini", "deterministic"]).default("deterministic"),
   DATABASE_URL: z.string().min(1),
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV !== "production") return;

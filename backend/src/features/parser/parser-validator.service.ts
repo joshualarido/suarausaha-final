@@ -73,6 +73,11 @@ function resolvePaymentAccount(input: ParseIntentInput, draft: GeminiParserDraft
   return null;
 }
 
+function resolveDefaultPaymentAccount(input: ParseIntentInput) {
+  if (!input.defaultPaymentAccountId || !input.defaultPaymentAccountName) return null;
+  return input.paymentAccounts.find((candidate) => candidate.id === input.defaultPaymentAccountId) ?? null;
+}
+
 function resolveDestinationPaymentAccount(input: ParseIntentInput, draft: GeminiParserDraft) {
   if (draft.destinationPaymentAccountId) {
     const matchedById = input.paymentAccounts.find((account) => account.id === draft.destinationPaymentAccountId);
@@ -399,9 +404,16 @@ export function validateParserDraft(
 
   const normalizedIntent = supportedIntentSchema.safeParse(draft.detectedIntent).success ? draft.detectedIntent : null;
   let account = resolvePaymentAccount(input, draft);
-  if (!account && normalizedIntent === "sales_income" && input.defaultPaymentAccountId && input.defaultPaymentAccountName) {
-    const defaultAccount = input.paymentAccounts.find((candidate) => candidate.id === input.defaultPaymentAccountId);
-    if (defaultAccount) account = defaultAccount;
+  let defaultedPaymentAccount = false;
+  if (!account && moneyMovementIntent(normalizedIntent)) {
+    const defaultAccount = resolveDefaultPaymentAccount(input);
+    if (defaultAccount) {
+      account = defaultAccount;
+      defaultedPaymentAccount = true;
+      for (let index = missingFields.length - 1; index >= 0; index -= 1) {
+        if (missingFields[index] === "paymentAccountId") missingFields.splice(index, 1);
+      }
+    }
   }
   const destinationAccount = normalizedIntent === "account_transfer" ? resolveDestinationPaymentAccount(input, draft) : null;
   if (account === "ambiguous") {
@@ -690,7 +702,7 @@ export function validateParserDraft(
       assumptionNotes.push(`Nominal dihitung dari ${inferredSalesQuantity} x harga menu ${inferredSalesMenuName}`);
     }
   }
-  if (normalizedIntent === "sales_income" && resolvedAccount && !draft.paymentAccountId && !draft.paymentAccountName) {
+  if (defaultedPaymentAccount && resolvedAccount) {
     assumptionNotes.push(`Akun pembayaran memakai default ${resolvedAccount.name}`);
   }
 

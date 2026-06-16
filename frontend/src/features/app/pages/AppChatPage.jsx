@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChatMessageList } from "@/features/app/components/ChatMessageList";
 import { useChatThread } from "./useChatThread";
+import suraAvatar from "@/assets/sura.png";
 
 const SPEECH_RECOGNITION_UNSUPPORTED =
   "Input suara gratis hanya didukung di browser tertentu seperti Chrome atau Edge. Kamu masih bisa mengetik transaksi.";
@@ -221,7 +222,12 @@ export function AppChatPage() {
       <header className="border-b border-border bg-card px-3 py-3 sm:px-4 md:px-6" data-tour-target="sura-header">
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="h-10 w-10 shrink-0 rounded-full border border-border bg-secondary/50 sm:h-11 sm:w-11" aria-hidden />
+            <img
+              src={suraAvatar}
+              alt=""
+              className="h-10 w-10 shrink-0 rounded-full border border-border bg-secondary/50 object-cover shadow-sm sm:h-11 sm:w-11"
+              aria-hidden
+            />
             <div className="min-w-0">
               <p className="su-type-ui truncate text-foreground">Sura</p>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -282,39 +288,55 @@ export function AppChatPage() {
             />
           </div>
 
-          <Button
-            type="submit"
-            disabled={isBusy || isListening}
-            aria-pressed={!hasDraftMessage && isListening}
-            className={cn(
-              "h-12 gap-2 px-4 transition-all duration-200 sm:h-14 sm:px-5",
-              !hasDraftMessage && "min-w-[6.75rem]",
-              !hasDraftMessage && isListening && "shadow-[0_0_0_6px_hsl(var(--primary)/0.14)]",
-              !hasDraftMessage && !isSpeechSupported && "bg-muted text-muted-foreground hover:bg-muted",
-            )}
-          >
-            {hasDraftMessage ? (
-              <>
-                <Send aria-hidden className="h-4 w-4" />
-                <span className="hidden sm:inline">Kirim</span>
-              </>
-            ) : isSpeechSupported ? (
-              <>
-                <span className="relative flex items-center justify-center">
-                  {isListening ? (
-                    <span className="absolute h-7 w-7 animate-ping rounded-full bg-primary-foreground/25" aria-hidden />
-                  ) : null}
+          <div className="relative">
+            {isListening ? (
+              <div className="motion-mic-float pointer-events-none absolute right-0 bottom-[calc(100%+0.5rem)] z-10 flex items-center gap-2 rounded-full border border-primary/25 bg-card px-3 py-2 text-xs font-semibold text-primary shadow-lg">
+                <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <span className="absolute h-8 w-8 animate-ping rounded-full bg-primary/25" aria-hidden />
                   <Mic aria-hidden className="relative h-4 w-4" />
                 </span>
-                <span>{isListening ? "Dengar" : "Bicara"}</span>
-              </>
-            ) : (
-              <>
-                <MicOff aria-hidden className="h-4 w-4" />
-                <span>Bicara</span>
-              </>
-            )}
-          </Button>
+                <span className="hidden sm:inline">Sura mendengar</span>
+                <span className="flex h-5 items-end gap-0.5" aria-hidden>
+                  <span className="motion-voice-bar h-2 w-1 rounded-full bg-primary/55" />
+                  <span className="motion-voice-bar h-4 w-1 rounded-full bg-primary/75 [animation-delay:120ms]" />
+                  <span className="motion-voice-bar h-3 w-1 rounded-full bg-primary/60 [animation-delay:240ms]" />
+                </span>
+              </div>
+            ) : null}
+            <Button
+              type="submit"
+              disabled={isBusy || isListening}
+              aria-pressed={!hasDraftMessage && isListening}
+              className={cn(
+                "h-12 gap-2 px-4 transition-all duration-200 sm:h-14 sm:px-5",
+                !hasDraftMessage && "min-w-[6.75rem]",
+                !hasDraftMessage && isListening && "shadow-[0_0_0_6px_hsl(var(--primary)/0.14)]",
+                !hasDraftMessage && !isSpeechSupported && "bg-muted text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {hasDraftMessage ? (
+                <>
+                  <Send aria-hidden className="h-4 w-4" />
+                  <span className="hidden sm:inline">Kirim</span>
+                </>
+              ) : isSpeechSupported ? (
+                <>
+                  <span className="relative flex items-center justify-center">
+                    {isListening ? (
+                      <span className="absolute h-7 w-7 animate-ping rounded-full bg-primary-foreground/25" aria-hidden />
+                    ) : null}
+                    <Mic aria-hidden className="relative h-4 w-4" />
+                  </span>
+                  <span>{isListening ? "Dengar" : "Bicara"}</span>
+                </>
+              ) : (
+                <>
+                  <MicOff aria-hidden className="h-4 w-4" />
+                  <span>Bicara</span>
+                </>
+              )}
+            </Button>
+          </div>
         </div>
         <div className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">

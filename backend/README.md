@@ -81,9 +81,7 @@ Required Render environment variables for `suarausaha-api`:
 - `BETTER_AUTH_SECRET`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL=gemini-3.1-flash-lite`
-- `PARSER_ENGINE=gemini`
+- `PARSER_ENGINE=deterministic`
 
 Required Render environment variable for `suarausaha-web`:
 
@@ -95,7 +93,7 @@ Google OAuth production callback:
 
 - `https://suarausaha-api.onrender.com/api/auth/callback/google`
 
-The backend validates production env on startup and exits if required secrets are missing, placeholders are used, Gemini is enabled without an API key, or the database points to localhost.
+The backend validates production env on startup and exits if required secrets are missing, placeholders are used, Gemini is enabled without an API key, or the database points to localhost. The MVP parser should use `PARSER_ENGINE=deterministic`; Gemini is optional and should only be enabled after a separate parser review.
 
 ## Backup / Restore Notes (for next phases)
 

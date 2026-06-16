@@ -11,6 +11,11 @@ function isTutorialVideoRequest(message) {
   );
 }
 
+function isSuraHelpRequest(message) {
+  const normalized = message.trim().toLowerCase();
+  return /\b(help|bantuan|bisa\s+apa|apa\s+yang\s+bisa|cara\s+pakai)\b/.test(normalized);
+}
+
 export function useChatThread() {
   const [status, setStatus] = useState("idle");
   const [chatItems, setChatItems] = useState([]);
@@ -84,19 +89,21 @@ export function useChatThread() {
     try {
       let handledLocally = false;
 
-      if (activeClarification) {
-        await clarifyChatMessage(activeClarification.data.clarificationId, submittedMessage);
-      } else if (isTutorialVideoRequest(submittedMessage)) {
+      if (isTutorialVideoRequest(submittedMessage)) {
         appendChatItem({
           role: "assistant",
           type: "tutorial_video_artifact",
           data: {
             title: "Video tutorial Sura",
-            description: "Ini placeholder untuk artifact video tutorial. Nanti area ini bisa memuat video panduan asli.",
+            description: "Panduan singkat untuk memakai Sura.",
             aspectRatio: "16:9",
           },
         });
         handledLocally = true;
+      } else if (isSuraHelpRequest(submittedMessage)) {
+        await querySura(submittedMessage);
+      } else if (activeClarification) {
+        await clarifyChatMessage(activeClarification.data.clarificationId, submittedMessage);
       } else if (pendingConfirmationRequestId) {
         await parseChatMessage(submittedMessage);
       } else {

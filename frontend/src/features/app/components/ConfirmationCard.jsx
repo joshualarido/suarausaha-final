@@ -60,7 +60,7 @@ export function ConfirmationCard({
 
     return (
       <div className="motion-chat-card flex justify-start">
-        <div className="w-full max-w-[96%] rounded-2xl border border-[#D4E1F0] bg-card px-4 py-4 sm:max-w-[92%]">
+        <div className="w-full max-w-[96%] rounded-2xl border border-border bg-card px-4 py-4 sm:max-w-[92%]">
           <p className="text-xs font-medium text-primary">Butuh konfirmasi</p>
           {!isCardActive ? (
             <p className="mt-1 text-xs text-muted-foreground">Konfirmasi ini sudah tidak aktif.</p>
@@ -112,7 +112,7 @@ export function ConfirmationCard({
 
   return (
     <div className="motion-chat-card flex justify-start">
-      <div className="w-full max-w-[96%] rounded-2xl border border-[#D4E1F0] bg-card px-4 py-4 sm:max-w-[92%]">
+      <div className="w-full max-w-[96%] rounded-2xl border border-border bg-card px-4 py-4 sm:max-w-[92%]">
         <p className="text-xs font-medium text-primary">Butuh konfirmasi</p>
         {!isCardActive ? (
           <p className="mt-1 text-xs text-muted-foreground">Konfirmasi ini sudah tidak aktif.</p>
@@ -181,7 +181,7 @@ export function ConfirmationCard({
         </ul>
 
         {proposedAction.warning ? (
-          <p className="mt-3 rounded-lg border border-[#D4E1F0] bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+          <p className="mt-3 rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
             {proposedAction.warning}
           </p>
         ) : null}

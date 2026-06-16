@@ -704,7 +704,7 @@ export function OnboardingBusinessPage() {
                   <TutorialVideoArtifact
                     compact
                     title="Tutorial setup Sura"
-                    description="Placeholder video end-to-end untuk membantu pengguna memahami setup awal."
+                    description="Panduan singkat untuk membantu kamu memahami setup awal."
                   />
                 </div>
                 <div className="mt-7">

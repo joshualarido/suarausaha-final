@@ -132,6 +132,7 @@ confirmationRouter.post("/confirmations/:confirmationRequestId/confirm", require
         confirmationRequestId: getParam(req.params.confirmationRequestId),
         transactionId: data.transactionId ?? null,
         content: {
+          status: "confirmed",
           message: data.message,
           type: data.type,
           transactionId: data.transactionId,

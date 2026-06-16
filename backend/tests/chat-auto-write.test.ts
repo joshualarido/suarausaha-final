@@ -254,7 +254,7 @@ describe("chat auto-write mode", () => {
     expect(createBaseTransactionInTransaction).not.toHaveBeenCalled();
   });
 
-  it("does not auto-save low confidence messages", async () => {
+  it("still creates confirmation for low confidence parsed messages", async () => {
     vi.mocked(parserEngine.parse).mockResolvedValue({
       status: "parsed",
       proposedAction: {
@@ -276,6 +276,11 @@ describe("chat auto-write mode", () => {
       structuredPayload: {},
     } as never);
 
+    vi.mocked(createConfirmationRequest).mockResolvedValue({
+      id: "confirm_low_confidence",
+      proposedActionJson: {},
+    } as never);
+
     const result = await parseChatMessage({
       businessId: "biz_123",
       userId: "user_123",
@@ -283,11 +288,11 @@ describe("chat auto-write mode", () => {
     });
 
     expect(result).toMatchObject({
-      status: "requires_clarification",
-      missingFields: ["confidence"],
+      status: "requires_confirmation",
+      confirmationRequestId: "confirm_low_confidence",
     });
     expect(createBaseTransactionInTransaction).not.toHaveBeenCalled();
-    expect(createConfirmationRequest).not.toHaveBeenCalled();
+    expect(createConfirmationRequest).toHaveBeenCalled();
   });
 
   it("updates an active POS sales confirmation from follow-up input", async () => {

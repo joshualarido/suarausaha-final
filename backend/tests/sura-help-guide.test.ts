@@ -114,4 +114,37 @@ describe("Sura help input guide", () => {
     expect(serialized).not.toMatch(/deterministic/i);
     expect(serialized).not.toContain("PARSER_ENGINE");
   });
+
+  it("provides keywords and examples for every final transaction intent", async () => {
+    const result = await querySura({
+      businessId: "biz_123",
+      userId: "user_123",
+      message: "Sura bisa apa?",
+    });
+
+    const guideItems = flattenGuide(result.data.inputGuide);
+    const writeExamples = guideItems.filter((item) => item.routeType === "write_action");
+
+    expect(writeExamples.map((item) => item.label)).toEqual(
+      expect.arrayContaining([
+        "Penjualan",
+        "Biaya usaha",
+        "Beli stok",
+        "Aset usaha",
+        "Utang baru",
+        "Bayar utang",
+        "Piutang baru",
+        "Bayar piutang",
+        "Tambah modal",
+        "Ambil uang/prive",
+        "Transfer akun",
+        "Undo transaksi",
+      ]),
+    );
+
+    for (const item of writeExamples) {
+      expect(item.keywords.length).toBeGreaterThan(0);
+      expect(item.example.length).toBeGreaterThan(0);
+    }
+  });
 });

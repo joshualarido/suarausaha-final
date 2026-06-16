@@ -475,7 +475,7 @@ export function DashboardLayout() {
                 >
                   <Bell aria-hidden className="h-6 w-6" />
                   {notificationQueue.length > 0 ? (
-                    <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                    <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-danger-foreground shadow-sm">
                       {notificationQueue.length > 9 ? "9+" : notificationQueue.length}
                     </span>
                   ) : null}
@@ -566,7 +566,7 @@ export function DashboardLayout() {
                           </div>
                           <div className="pointer-events-none absolute right-0 bottom-0 left-0 overflow-hidden bg-border/70">
                             <div
-                              className="h-1 rounded-full bg-primary transition-[width] duration-100 ease-linear"
+                              className="h-1 rounded-full bg-danger transition-[width] duration-100 ease-linear"
                               style={{ width: `${remainingPercent}%` }}
                             />
                           </div>

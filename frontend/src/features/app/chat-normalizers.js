@@ -206,6 +206,18 @@ export function hydrateChatItemsFromThread(messages) {
           };
         }
 
+        if (content.status === "confirmed" || content.status === "cancelled" || content.status === "cancelled_pending_confirmation") {
+          return {
+            id: messageItem.id,
+            role: "assistant",
+            type: "system_result",
+            data: {
+              status: String(content.status),
+              message: String(content.message ?? ""),
+            },
+          };
+        }
+
         return {
           id: messageItem.id,
           role: "assistant",
