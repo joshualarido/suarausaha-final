@@ -20,7 +20,8 @@ function resolveCallbackURL(callbackPath) {
     throw new Error("Alamat web aplikasi belum dikonfigurasi.");
   }
 
-  return `${frontendOrigin}${callbackPath}`;
+  const next = `${frontendOrigin}${callbackPath}`;
+  return `${getApiBaseUrl()}/api/auth/session-handoff/start?next=${encodeURIComponent(next)}`;
 }
 
 export async function getCurrentUser() {

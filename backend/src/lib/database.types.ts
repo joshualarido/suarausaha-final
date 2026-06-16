@@ -18,6 +18,15 @@ export interface UserRow {
   updatedAt: Date;
 }
 
+export interface VerificationRow {
+  id: string;
+  identifier: string;
+  value: string;
+  expiresAt: Date;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
 export interface PaymentAccountRow {
   id: string;
   businessId: string;
@@ -253,6 +262,7 @@ export interface ChatMessageRow {
 
 export interface DatabaseSchema {
   user: UserRow;
+  verification: VerificationRow;
   business: BusinessRow;
   payment_accounts: PaymentAccountRow;
   menu_items: MenuItemRow;

@@ -12,7 +12,7 @@ describe("Render Blueprint", () => {
     expect(apiRewriteIndex).toBeGreaterThan(-1);
     expect(spaFallbackIndex).toBeGreaterThan(-1);
     expect(apiRewriteIndex).toBeLessThan(spaFallbackIndex);
-    expect(blueprint).toContain("API_BASE_URL\n        value: https://suarausaha-web.onrender.com");
+    expect(blueprint).toContain("API_BASE_URL\n        value: https://suarausaha-api.onrender.com");
     expect(blueprint).toContain("destination: https://suarausaha-api.onrender.com/api/*");
     expect(blueprint).toContain("VITE_API_BASE_URL\n        value: https://suarausaha-web.onrender.com");
   });

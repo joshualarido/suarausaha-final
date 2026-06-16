@@ -12,7 +12,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: API_BASE_URL
-        value: https://suarausaha-web.onrender.com
+        value: https://suarausaha-api.onrender.com
       - key: FRONTEND_ORIGIN
         value: https://suarausaha-web.onrender.com
       - key: DATABASE_URL
