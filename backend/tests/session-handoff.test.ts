@@ -1,4 +1,5 @@
 import request from "supertest";
+import { makeSignature } from "better-auth/crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/features/auth/auth.js", () => {
@@ -45,6 +46,7 @@ vi.mock("../src/lib/database.js", () => {
 });
 
 import { app } from "../src/app.js";
+import { env } from "../src/config/env.js";
 import { auth } from "../src/features/auth/auth.js";
 import { __handoffDbMocks } from "../src/lib/database.js";
 
@@ -87,6 +89,9 @@ describe("session handoff", () => {
     expect(response.status).toBe(302);
     expect(response.headers.location).toBe("http://localhost:5173/onboarding/business");
     expect(response.headers["set-cookie"][0]).toContain("__Secure-better-auth.session_token=");
+    expect(response.headers["set-cookie"][0]).toContain(
+      `session-token.${await makeSignature("session-token", env.BETTER_AUTH_SECRET)}`,
+    );
     expect(response.headers["set-cookie"][0]).toContain("SameSite=Lax");
     expect(__handoffDbMocks.deleteExecute).toHaveBeenCalledOnce();
   });

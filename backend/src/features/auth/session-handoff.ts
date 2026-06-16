@@ -1,5 +1,6 @@
-import { randomBytes, randomUUID, createHmac } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
+import { makeSignature } from "better-auth/crypto";
 import { fromNodeHeaders } from "better-auth/node";
 import { db } from "../../lib/database.js";
 import { env } from "../../config/env.js";
@@ -10,9 +11,8 @@ const HANDOFF_TTL_MS = 2 * 60 * 1000;
 const SESSION_COOKIE_NAME = "__Secure-better-auth.session_token";
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
-function signCookieValue(value: string): string {
-  const signature = createHmac("sha256", env.BETTER_AUTH_SECRET).update(value).digest("base64");
-  return encodeURIComponent(`${value}.${signature}`);
+async function signCookieValue(value: string): Promise<string> {
+  return `${value}.${await makeSignature(value, env.BETTER_AUTH_SECRET)}`;
 }
 
 function resolveSafeNext(value: unknown): string {
@@ -89,7 +89,7 @@ export async function claimSessionHandoff(req: Request, res: Response): Promise<
 
   res.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE_NAME}=${signCookieValue(handoff.value)}; Max-Age=${SESSION_MAX_AGE_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax`,
+    `${SESSION_COOKIE_NAME}=${await signCookieValue(handoff.value)}; Max-Age=${SESSION_MAX_AGE_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax`,
   );
   res.redirect(302, next);
 }
