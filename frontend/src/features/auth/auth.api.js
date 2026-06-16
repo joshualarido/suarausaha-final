@@ -1,4 +1,27 @@
-import { apiRequest } from "@/lib/api-client";
+import { apiRequest, getApiBaseUrl } from "@/lib/api-client";
+
+function trimTrailingSlash(value) {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+function resolveFrontendOrigin() {
+  const configuredOrigin = import.meta.env.VITE_FRONTEND_ORIGIN;
+  if (configuredOrigin?.trim()) {
+    return trimTrailingSlash(configuredOrigin.trim());
+  }
+
+  const currentOrigin = window.location.origin;
+  return currentOrigin === getApiBaseUrl() ? "" : currentOrigin;
+}
+
+function resolveCallbackURL(callbackPath) {
+  const frontendOrigin = resolveFrontendOrigin();
+  if (!frontendOrigin) {
+    throw new Error("Alamat web aplikasi belum dikonfigurasi.");
+  }
+
+  return `${frontendOrigin}${callbackPath}`;
+}
 
 export async function getCurrentUser() {
   return apiRequest("/api/v1/me");
@@ -12,7 +35,7 @@ export async function updateCurrentUserProfile(name) {
 }
 
 export async function startGoogleSignIn(callbackPath = "/onboarding/business") {
-  const callbackURL = `${window.location.origin}${callbackPath}`;
+  const callbackURL = resolveCallbackURL(callbackPath);
   const payload = await apiRequest("/api/auth/sign-in/social?provider=google", {
     method: "POST",
     body: {

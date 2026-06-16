@@ -37,6 +37,10 @@ app.use(
 );
 app.use(express.json());
 
+app.get("/", (_req, res) => {
+  res.redirect(302, env.FRONTEND_ORIGIN);
+});
+
 app.use("/api/auth", authRouter);
 app.use("/api/v1/health", healthRouter);
 app.use("/api/v1", userRouter);

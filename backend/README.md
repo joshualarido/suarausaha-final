@@ -86,8 +86,9 @@ Required Render environment variables for `suarausaha-api`:
 Required Render environment variable for `suarausaha-web`:
 
 - `VITE_API_BASE_URL=https://suarausaha-api.onrender.com`
+- `VITE_FRONTEND_ORIGIN=https://suarausaha-web.onrender.com`
 
-If Render changes either service URL because the service name is unavailable, update `API_BASE_URL`, `FRONTEND_ORIGIN`, `VITE_API_BASE_URL`, and the Google OAuth redirect URI to match the actual URLs.
+If Render changes either service URL because the service name is unavailable, update `API_BASE_URL`, `FRONTEND_ORIGIN`, `VITE_API_BASE_URL`, `VITE_FRONTEND_ORIGIN`, and the Google OAuth redirect URI to match the actual URLs.
 
 Google OAuth production callback:
 

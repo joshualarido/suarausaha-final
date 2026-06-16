@@ -414,7 +414,7 @@ export function DashboardLayout() {
       <div className="flex h-full min-h-0">
         <aside
           className={[
-            "sticky top-0 hidden h-screen min-h-0 shrink-0 border-r border-border bg-card transition-[width] duration-200 md:flex md:flex-col",
+            "sticky top-0 hidden h-screen min-h-0 shrink-0 border-r border-border bg-card transition-[width] duration-200 sm:flex sm:flex-col",
             isSidebarCollapsed ? "w-[84px]" : "w-[264px]",
           ].join(" ")}
         >
@@ -422,7 +422,7 @@ export function DashboardLayout() {
         </aside>
 
         {isMobileSidebarOpen ? (
-          <div className="fixed inset-0 z-50 md:hidden">
+          <div className="fixed inset-0 z-50 sm:hidden">
             <button
               type="button"
               aria-label="Tutup navigasi"
@@ -444,7 +444,7 @@ export function DashboardLayout() {
                   aria-label="Buka navigasi"
                   aria-expanded={isMobileSidebarOpen}
                   onClick={() => setIsMobileSidebarOpen(true)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-primary hover:bg-secondary md:hidden"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-primary hover:bg-secondary sm:hidden"
                 >
                   <LayoutDashboard aria-hidden className="h-5 w-5" />
                 </button>

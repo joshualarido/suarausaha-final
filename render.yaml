@@ -36,6 +36,8 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         value: https://suarausaha-api.onrender.com
+      - key: VITE_FRONTEND_ORIGIN
+        value: https://suarausaha-web.onrender.com
     routes:
       - type: rewrite
         source: /*
