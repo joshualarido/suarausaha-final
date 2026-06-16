@@ -15,5 +15,6 @@ describe("Render Blueprint", () => {
     expect(blueprint).toContain("API_BASE_URL\n        value: https://suarausaha-api.onrender.com");
     expect(blueprint).toContain("destination: https://suarausaha-api.onrender.com/api/*");
     expect(blueprint).toContain("VITE_API_BASE_URL\n        value: https://suarausaha-web.onrender.com");
+    expect(blueprint).toContain("VITE_AUTH_API_BASE_URL\n        value: https://suarausaha-api.onrender.com");
   });
 });

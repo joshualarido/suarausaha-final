@@ -86,11 +86,12 @@ Required Render environment variables for `suarausaha-api`:
 Required Render environment variable for `suarausaha-web`:
 
 - `VITE_API_BASE_URL=https://suarausaha-web.onrender.com`
+- `VITE_AUTH_API_BASE_URL=https://suarausaha-api.onrender.com`
 - `VITE_FRONTEND_ORIGIN=https://suarausaha-web.onrender.com`
 
-The static web service rewrites `/api/*` to `https://suarausaha-api.onrender.com/api/*`. Keep frontend API calls on the web origin so auth cookies remain first-party in Chrome incognito and privacy-restricted browsers. Google OAuth still uses the API callback, then a short server-side handoff sets the final web-origin session cookie.
+The static web service rewrites `/api/*` to `https://suarausaha-api.onrender.com/api/*`. Keep normal frontend API calls on the web origin so auth cookies remain first-party in Chrome incognito and privacy-restricted browsers. Google OAuth starts on the API origin so Better Auth can validate its OAuth state cookie on the API callback, then a short server-side handoff sets the final web-origin session cookie.
 
-If Render changes either service URL because the service name is unavailable, update `API_BASE_URL`, `FRONTEND_ORIGIN`, `VITE_API_BASE_URL`, `VITE_FRONTEND_ORIGIN`, the static `/api/*` rewrite destination, and the Google OAuth redirect URI to match the actual URLs.
+If Render changes either service URL because the service name is unavailable, update `API_BASE_URL`, `FRONTEND_ORIGIN`, `VITE_API_BASE_URL`, `VITE_AUTH_API_BASE_URL`, `VITE_FRONTEND_ORIGIN`, the static `/api/*` rewrite destination, and the Google OAuth redirect URI to match the actual URLs.
 
 Google OAuth production callback:
 

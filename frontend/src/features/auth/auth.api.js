@@ -1,4 +1,5 @@
 import { apiRequest, getApiBaseUrl } from "@/lib/api-client";
+import { resolveGoogleAuthUrls } from "./auth-url";
 
 function trimTrailingSlash(value) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
@@ -16,12 +17,22 @@ function resolveFrontendOrigin() {
 
 function resolveCallbackURL(callbackPath) {
   const frontendOrigin = resolveFrontendOrigin();
-  if (!frontendOrigin) {
-    throw new Error("Alamat web aplikasi belum dikonfigurasi.");
-  }
+  return resolveGoogleAuthUrls({
+    apiBaseUrl: getApiBaseUrl(),
+    authApiBaseUrl: import.meta.env.VITE_AUTH_API_BASE_URL,
+    frontendOrigin,
+    callbackPath,
+  }).callbackURL;
+}
 
-  const next = `${frontendOrigin}${callbackPath}`;
-  return `${getApiBaseUrl()}/api/auth/session-handoff/start?next=${encodeURIComponent(next)}`;
+function resolveGoogleSignInPath(callbackPath) {
+  const frontendOrigin = resolveFrontendOrigin();
+  return resolveGoogleAuthUrls({
+    apiBaseUrl: getApiBaseUrl(),
+    authApiBaseUrl: import.meta.env.VITE_AUTH_API_BASE_URL,
+    frontendOrigin,
+    callbackPath,
+  }).signInPath;
 }
 
 export async function getCurrentUser() {
@@ -37,7 +48,7 @@ export async function updateCurrentUserProfile(name) {
 
 export async function startGoogleSignIn(callbackPath = "/onboarding/business") {
   const callbackURL = resolveCallbackURL(callbackPath);
-  const payload = await apiRequest("/api/auth/sign-in/social?provider=google", {
+  const payload = await apiRequest(resolveGoogleSignInPath(callbackPath), {
     method: "POST",
     body: {
       provider: "google",
